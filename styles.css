@@ -21,7 +21,11 @@
 
 *,*::before,*::after{ box-sizing:border-box; margin:0; padding:0; }
 
-html{ scroll-behavior:smooth; -webkit-text-size-adjust:100%; }
+html{
+  scroll-behavior:smooth;
+  -webkit-text-size-adjust:100%;  /* impedisce a iOS di ingrandire i testi da solo */
+  overflow-x:hidden;              /* nessuno scorrimento laterale accidentale */
+}
 
 /* blocca lo zoom (pinch e doppio tap) solo sui touch screen (telefoni/tablet).
    Da iOS 10 in poi Safari ignora "user-scalable=no" nel meta viewport per
@@ -627,14 +631,30 @@ main, .nav, .footer{ position:relative; z-index:2; }
   .work__info p{ font-size:13.5px; margin-bottom:12px; }
   .work__year{ font-size:11px; }
 
+  /* Le anteprime hanno misure interne fisse, disegnate per un riquadro largo
+     ~560px. Su telefono il riquadro è ~350px, quindi il contenuto risulterebbe
+     enorme e tagliato. Rimpicciolendo l'intera pagina in blocco (e allargandola
+     di 1/scala per farle riempire ancora il riquadro) le proporzioni restano
+     identiche al desktop: è come guardare il sito reale un po' più da lontano. */
+  .minisite__bar{ height:17px; padding:0 7px; }
+  .minisite__dot{ width:4.5px; height:4.5px; }
+  .minisite__url{ height:9px; font-size:5.5px; margin-left:6px; }
+  .minisite__page{
+    transform:scale(.63);
+    transform-origin:top left;
+    width:158.7%;   /* 100 / 0.63 */
+  }
+
   .proc__intro{ font-size:13.5px; }
   .step h3{ font-size:19px; }
   .step p{ font-size:13.5px; }
 
-  .stat{ padding:20px; }
-  .stat__v{ font-size:36px; }
-  .stat__u{ font-size:18px; }
-  .stat p{ font-size:12px; }
+  /* due per riga invece di una colonna sola: più compatto e leggibile */
+  .stats{ grid-template-columns:repeat(2,1fr); }
+  .stat{ padding:18px 14px; }
+  .stat__v{ font-size:30px; }
+  .stat__u{ font-size:15px; }
+  .stat p{ font-size:11.5px; margin-top:8px; }
 
   .contatti{ padding:70px var(--pad); }
   .cta__title{ font-size:clamp(30px,13vw,52px); margin:18px 0 26px; }
