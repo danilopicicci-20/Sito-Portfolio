@@ -23,6 +23,13 @@
 
 html{ scroll-behavior:smooth; -webkit-text-size-adjust:100%; }
 
+/* blocca lo zoom col doppio tap solo sui touch screen (telefoni/tablet):
+   il meta viewport ferma il pinch-zoom, questo ferma anche il doppio tap
+   che su iOS a volte lo aggira */
+@media (hover:none){
+  html, body{ touch-action:manipulation; }
+}
+
 body{
   background:var(--bg);
   color:var(--ink);
