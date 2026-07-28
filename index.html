@@ -37,33 +37,9 @@
           <stop offset="0%" stop-color="#8f7bff"/>
           <stop offset="100%" stop-color="#00e2b8"/>
         </linearGradient>
-        <!-- Filtro "goo": sfoca il gruppo e poi rialza brutalmente il contrasto
-             del canale alpha (l'ultima riga della matrice). Risultato: due forme
-             che si avvicinano non si sovrappongono, si SALDANO in una massa
-             unica, come due gocce di mercurio. -->
-        <filter id="goo" x="-45%" y="-45%" width="190%" height="190%"
-                color-interpolation-filters="sRGB">
-          <feGaussianBlur in="SourceGraphic" stdDeviation="9" result="b"/>
-          <feColorMatrix in="b" mode="matrix" result="g"
-                         values="1 0 0 0 0
-                                 0 1 0 0 0
-                                 0 0 1 0 0
-                                 0 0 0 24 -11"/>
-          <feBlend in="SourceGraphic" in2="g"/>
-        </filter>
       </defs>
 
-      <!-- Fase 1 — sei gocce sparse che convergono e si fondono -->
-      <g id="loaderBlobs" filter="url(#goo)">
-        <circle class="blob" cx="120" cy="120" r="20"/>
-        <circle class="blob" cx="120" cy="120" r="14"/>
-        <circle class="blob" cx="120" cy="120" r="17"/>
-        <circle class="blob" cx="120" cy="120" r="11"/>
-        <circle class="blob" cx="120" cy="120" r="15"/>
-        <circle class="blob" cx="120" cy="120" r="9"/>
-      </g>
-
-      <!-- Fase 2 — anello e onda si disegnano sopra la massa liquida -->
+      <!-- Fase 1 — anello e onda si disegnano -->
       <circle id="loaderRingBg" cx="120" cy="120" r="98" fill="none"
               stroke="rgba(244,242,238,.12)" stroke-width="2"/>
       <circle id="loaderRing" class="loader__ring" cx="120" cy="120" r="98" pathLength="1"
@@ -76,7 +52,7 @@
       <circle id="loaderDrop" cx="64" cy="134" r="5" fill="url(#gRingLoader)"/>
     </svg>
 
-    <!-- Fase 3 — il wordmark si riempie di liquido: due copie dello stesso
+    <!-- Fase 2 — il wordmark si riempie di liquido: due copie dello stesso
          testo, la seconda ritagliata da una mask la cui superficie ondeggia. -->
     <svg class="loader__word" viewBox="0 0 420 40" aria-hidden="true">
       <defs>

@@ -250,13 +250,12 @@
   /* ==================================================
      3. PRELOADER
      ==================================================
-     Quattro fasi, tutte sullo stesso tema "fluido":
-       1. gocce sparse che si FONDONO grazie al filtro SVG #goo
-       2. la massa si schiaccia e l'onda del logo si disegna sopra,
-          con una goccia che la cavalca (getPointAtLength, non un plugin)
-       3. il wordmark si riempie di liquido attraverso una mask SVG
-       4. la tenda risale con un bordo ondulato
-     Le due superfici liquide (3 e 4) non sono keyframe: il path viene
+     Tre fasi, tutte sullo stesso tema "fluido":
+       1. anello e onda si disegnano, con una goccia che cavalca l'onda
+          mentre viene tracciata (getPointAtLength, non un plugin)
+       2. il wordmark si riempie di liquido attraverso una mask SVG
+       3. la tenda risale con un bordo ondulato
+     Le due superfici liquide (2 e 3) non sono keyframe: il path viene
      RIGENERATO a ogni frame da una somma di sinusoidi, così il profilo
      non si ripete mai identico. Costo: due setAttribute per frame.
      ================================================== */
@@ -306,15 +305,11 @@
     // senza GSAP, o se l'utente ha chiesto meno movimento, si salta tutto
     if (!hasGSAP || reduced) { release(); hide(); return; }
 
-    const blobs   = gsap.utils.toArray('#loaderBlobs .blob');
     const fillEl  = document.getElementById('loaderFill');
     const curtEl  = document.getElementById('loaderCurtain');
     const waveEl  = document.getElementById('loaderWave');
     const dropEl  = document.getElementById('loaderDrop');
     const waveLen = waveEl.getTotalLength();
-
-    // posizioni di partenza delle gocce, come scarti dal centro del viewBox
-    const scatter = [[-80,-44],[74,-64],[-58,70],[86,36],[6,-92],[-16,88]];
 
     // stato letto dal ticker: GSAP interpola i numeri, il ticker ridisegna
     const liq = { level: 0 };
@@ -337,32 +332,20 @@
       onComplete: () => { gsap.ticker.remove(paint); hide(); }
     });
 
-    /* --- FASE 1 · le gocce compaiono sparse e convergono --- */
-    tl.set('#loaderBlobs', { opacity: 1 }, 0)
-      .fromTo(blobs,
-        { scale: 0, x: i => scatter[i][0], y: i => scatter[i][1] },
-        { scale: 1, duration: .55, ease: 'back.out(2.2)', stagger: .05 }, 0)
-      .to(blobs, { x: 0, y: 0, duration: .9, ease: 'power3.inOut', stagger: .025 }, .35)
-
-    /* --- FASE 2 · la massa si schiaccia, anello e onda si disegnano --- */
-      .to('#loaderBlobs', {
-        scaleX: 1.5, scaleY: .3, transformOrigin: '50% 50%',
-        duration: .45, ease: 'power2.in'
-      }, 1.1)
-      .to('#loaderBlobs', { opacity: 0, duration: .5, ease: 'power2.out' }, 1.35)
-      .to('#loaderRingBg', { opacity: 1, duration: .5 }, .6)
+    /* --- FASE 1 · anello e onda si disegnano --- */
+    tl.to('#loaderRingBg', { opacity: 1, duration: .5 }, 0)
       .fromTo('#loaderRing',
         { strokeDashoffset: 1 },
-        { strokeDashoffset: 0, duration: 1.15, ease: 'power2.inOut' }, .6)
+        { strokeDashoffset: 0, duration: 1.15, ease: 'power2.inOut' }, 0)
       .fromTo('#loaderWave',
         { strokeDashoffset: 1 },
-        { strokeDashoffset: 0, duration: .85, ease: 'power2.out' }, 1.4)
+        { strokeDashoffset: 0, duration: .85, ease: 'power2.out' }, .8)
       .fromTo('#loaderWave2',
         { strokeDashoffset: 1 },
-        { strokeDashoffset: 0, duration: .75, ease: 'power2.out' }, 1.6)
+        { strokeDashoffset: 0, duration: .75, ease: 'power2.out' }, 1)
       // la goccia percorre il tracciato in sincrono con il tratto che appare:
       // sembra che sia lei a dipingere l'onda
-      .set(dropEl, { opacity: 1 }, 1.4)
+      .set(dropEl, { opacity: 1 }, .8)
       .to({ u: 0 }, {
         u: 1, duration: .85, ease: 'power2.out',
         onUpdate() {
@@ -370,26 +353,26 @@
           dropEl.setAttribute('cx', pt.x.toFixed(2));
           dropEl.setAttribute('cy', pt.y.toFixed(2));
         }
-      }, 1.4)
-      .fromTo(dropEl, { scale: .4 }, { scale: 1, duration: .4, ease: 'back.out(3)' }, 2.15)
+      }, .8)
+      .fromTo(dropEl, { scale: .4 }, { scale: 1, duration: .4, ease: 'back.out(3)' }, 1.55)
 
-    /* --- FASE 3 · il wordmark si riempie --- */
-      .to('.loader__word', { opacity: 1, duration: .5, ease: 'power2.out' }, 1.5)
-      .to(liq, { level: 1, duration: 1.1, ease: 'power2.inOut' }, 1.7)
+    /* --- FASE 2 · il wordmark si riempie --- */
+      .to('.loader__word', { opacity: 1, duration: .5, ease: 'power2.out' }, .9)
+      .to(liq, { level: 1, duration: 1.1, ease: 'power2.inOut' }, 1.1)
 
-    /* --- FASE 4 · respiro e uscita a tenda --- */
-      .to('.loader__mark', { scale: 1.05, duration: .26, ease: 'power2.out' }, 2.85)
-      .to('.loader__mark', { scale: 1, duration: .34, ease: 'power2.inOut' }, 3.11)
+    /* --- FASE 3 · respiro e uscita a tenda --- */
+      .to('.loader__mark', { scale: 1.05, duration: .26, ease: 'power2.out' }, 2.25)
+      .to('.loader__mark', { scale: 1, duration: .34, ease: 'power2.inOut' }, 2.51)
       // da qui la copertura è solo il path: senza questo, il fondo pieno del
       // pannello resterebbe visibile sotto la tenda che sale
-      .call(() => { loader.style.background = 'transparent'; }, null, 3.15)
+      .call(() => { loader.style.background = 'transparent'; }, null, 2.55)
       // la hero parte mentre la tenda risale, così si scopre già animata
-      .call(release, null, 3.18)
-      .to('.loader__inner', { y: -80, opacity: 0, duration: .65, ease: 'power2.in' }, 3.15)
-      .to(cur, { p: 1, duration: 1, ease: 'power2.inOut' }, 3.2);
+      .call(release, null, 2.58)
+      .to('.loader__inner', { y: -80, opacity: 0, duration: .65, ease: 'power2.in' }, 2.55)
+      .to(cur, { p: 1, duration: 1, ease: 'power2.inOut' }, 2.6);
 
-    // ~4,2 s a velocità 1: troppo. 1,35× lo porta a ~3,1 s.
-    // Chi ha già visto l'intro in questa sessione se la becca in ~1,3 s.
+    // ~3,6 s a velocità 1: 1,35× lo porta a ~2,7 s.
+    // Chi ha già visto l'intro in questa sessione se la becca in ~1,1 s.
     let seen = false;
     try { seen = sessionStorage.getItem('fs_intro') === '1'; sessionStorage.setItem('fs_intro', '1'); } catch (e) {}
     tl.timeScale(seen ? 3.2 : 1.35);
