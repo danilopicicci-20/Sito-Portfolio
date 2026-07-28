@@ -1,0 +1,21 @@
+<svg viewBox="0 0 640 200" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="gB" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#7c5cff"/>
+      <stop offset="55%" stop-color="#00e2b8"/>
+      <stop offset="100%" stop-color="#ff5c8a"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="640" height="200" rx="20" fill="#07070a"/>
+
+  <!-- nastro fluido: doppia onda sovrapposta -->
+  <path d="M24 118 C 42 86, 64 86, 82 108 S 122 138, 140 108 S 180 78, 198 98"
+        fill="none" stroke="url(#gB)" stroke-width="8" stroke-linecap="round" opacity=".35"/>
+  <path d="M24 104 C 42 72, 64 72, 82 94 S 122 124, 140 94 S 180 64, 198 84"
+        fill="none" stroke="url(#gB)" stroke-width="9" stroke-linecap="round"/>
+
+  <!-- wordmark -->
+  <text x="232" y="96" font-family="Georgia, 'Times New Roman', serif" font-style="italic" font-size="46" fill="#f4f2ee">Fluid</text>
+  <text x="232" y="140" font-family="Arial, Helvetica, sans-serif" font-size="20" letter-spacing="6" fill="#c2c0c9">STUDIO</text>
+</svg>

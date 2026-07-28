@@ -1,0 +1,457 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+<title>Fluids Studio — Design & Sviluppo Web con Animazioni 3D</title>
+<meta name="description" content="Fluids Studio: progettazione e sviluppo di siti web su misura, animazioni fluide, 3D interattivo e performance reali. Guarda cosa possiamo costruire per te." />
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Inter+Tight:wght@300;400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+
+<!-- ============ PRELOADER ============ -->
+<div class="loader" id="loader">
+  <div class="loader__inner">
+    <svg class="loader__mark" viewBox="0 0 240 240" aria-hidden="true">
+      <defs>
+        <linearGradient id="gRingLoader" x1="10%" y1="0%" x2="90%" y2="100%">
+          <stop offset="0%" stop-color="#8f7bff"/>
+          <stop offset="100%" stop-color="#00e2b8"/>
+        </linearGradient>
+      </defs>
+      <circle cx="120" cy="120" r="98" fill="none" stroke="rgba(244,242,238,.26)" stroke-width="1"/>
+      <path d="M64 134 C 82 98, 100 98, 120 120 C 140 142, 158 142, 176 106"
+            fill="none" stroke="url(#gRingLoader)" stroke-width="6.5" stroke-linecap="round"/>
+      <path d="M70 150 C 86 122, 102 122, 120 140 C 138 158, 154 158, 170 130"
+            fill="none" stroke="url(#gRingLoader)" stroke-width="2.5" stroke-linecap="round" opacity=".28"/>
+      <circle cx="176" cy="106" r="4.2" fill="url(#gRingLoader)"/>
+    </svg>
+    <div class="loader__label">Fluids Studio</div>
+    <div class="loader__bar"><span id="loaderBar"></span></div>
+    <div class="loader__count"><span id="loaderCount">0</span>%</div>
+  </div>
+</div>
+
+<!-- ============ CURSOR ============ -->
+<div class="cursor" id="cursor"><span class="cursor__label" id="cursorLabel"></span></div>
+
+<!-- ============ 3D CANVAS ============ -->
+<canvas id="scene"></canvas>
+<div class="scrim"></div>
+<div class="grain"></div>
+
+<!-- ============ NAV ============ -->
+<header class="nav" id="nav">
+  <a href="#top" class="nav__logo" data-hover aria-label="Fluids Studio — Home">
+    <svg class="nav__mark" viewBox="0 0 240 240" aria-hidden="true">
+      <defs>
+        <linearGradient id="gRingNav" x1="10%" y1="0%" x2="90%" y2="100%">
+          <stop offset="0%" stop-color="#8f7bff"/>
+          <stop offset="100%" stop-color="#00e2b8"/>
+        </linearGradient>
+      </defs>
+      <circle cx="120" cy="120" r="96" fill="none" stroke="rgba(244,242,238,.32)" stroke-width="6"/>
+      <path d="M64 134 C 82 98, 100 98, 120 120 C 140 142, 158 142, 176 106"
+            fill="none" stroke="url(#gRingNav)" stroke-width="16" stroke-linecap="round"/>
+      <path d="M70 150 C 86 122, 102 122, 120 140 C 138 158, 154 158, 170 130"
+            fill="none" stroke="url(#gRingNav)" stroke-width="7" stroke-linecap="round" opacity=".3"/>
+      <circle cx="176" cy="106" r="9" fill="url(#gRingNav)"/>
+    </svg>
+  </a>
+  <nav class="nav__links">
+    <a href="#studio" data-hover>Approccio</a>
+    <a href="#servizi" data-hover>Servizi</a>
+    <a href="#lavori" data-hover>Lavori</a>
+    <a href="#processo" data-hover>Processo</a>
+  </nav>
+  <a href="#contatti" class="nav__cta" data-hover>Parliamone</a>
+</header>
+
+<main id="top">
+
+  <!-- ============ HERO ============ -->
+  <section class="hero">
+    <div class="hero__inner">
+      <div class="brandmark" aria-hidden="true">
+        <svg class="brandmark__icon" viewBox="0 0 240 240">
+          <defs>
+            <linearGradient id="gRingHero" x1="10%" y1="0%" x2="90%" y2="100%">
+              <stop offset="0%" stop-color="#8f7bff"/>
+              <stop offset="100%" stop-color="#00e2b8"/>
+            </linearGradient>
+            <filter id="liquidFilter" x="-60%" y="-60%" width="220%" height="220%">
+              <feTurbulence id="liquidTurb" type="fractalNoise" baseFrequency="0.012 0.03" numOctaves="2" seed="7" result="noise" />
+              <feDisplacementMap id="liquidDisplace" in="SourceGraphic" in2="noise" scale="9" xChannelSelector="R" yChannelSelector="G" />
+            </filter>
+          </defs>
+
+          <!-- anello: resta stabile e preciso -->
+          <circle cx="120" cy="120" r="98" fill="none" stroke="rgba(244,242,238,.26)" stroke-width="1"/>
+
+          <!-- l'acqua dentro l'anello: distorta e in flusso continuo -->
+          <g filter="url(#liquidFilter)">
+            <path class="brandmark__wave" pathLength="1"
+                  d="M64 134 C 82 98, 100 98, 120 120 C 140 142, 158 142, 176 106"
+                  fill="none" stroke="url(#gRingHero)" stroke-width="6.5" stroke-linecap="round"/>
+            <path d="M70 150 C 86 122, 102 122, 120 140 C 138 158, 154 158, 170 130"
+                  fill="none" stroke="url(#gRingHero)" stroke-width="2.5" stroke-linecap="round" opacity=".28"/>
+            <circle cx="176" cy="106" r="4.2" fill="url(#gRingHero)"/>
+          </g>
+        </svg>
+        <div class="brandmark__word">
+          <span class="brandmark__fluid">Fluids</span>
+          <span class="brandmark__studio">Studio</span>
+        </div>
+      </div>
+      <p class="eyebrow hero__eyebrow"><span class="pulse"></span> Disponibile per nuovi progetti — 2026</p>
+      <h1 class="hero__title">
+        <span class="line">Costruisco siti</span>
+        <span class="line">che <em>si muovono</em></span>
+        <span class="line">e restano impressi.</span>
+      </h1>
+      <div class="hero__meta">
+        <p class="hero__sub" data-split>Design e sviluppo su misura: animazioni fluide, 3D interattivo, performance reali. Questo sito è una dimostrazione — il tuo può essere ancora meglio.</p>
+        <a href="#contatti" class="btn" data-hover>
+          <span>Iniziamo il tuo progetto</span>
+          <svg viewBox="0 0 24 24" fill="none"><path d="M5 12h14M13 6l6 6-6 6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </a>
+      </div>
+    </div>
+    <div class="hero__scroll">
+      <span>Scorri</span>
+      <div class="hero__scrollline"><i></i></div>
+    </div>
+  </section>
+
+  <!-- ============ MARQUEE ============ -->
+  <div class="marquee" aria-hidden="true">
+    <div class="marquee__track" id="marqueeTrack">
+      <span>Siti vetrina<i>◆</i>Landing page<i>◆</i>Animazioni GSAP<i>◆</i>3D interattivo<i>◆</i>Restyling<i>◆</i>Performance<i>◆</i>SEO tecnica<i>◆</i></span>
+    </div>
+  </div>
+
+  <!-- ============ MANIFESTO ============ -->
+  <section class="section studio" id="studio">
+    <div class="sec-head">
+      <span class="sec-num">01</span>
+      <span class="sec-label">Approccio</span>
+    </div>
+    <p class="manifesto" data-split>
+      La maggior parte dei siti si dimentica in tre secondi. Io lavoro sull'opposto: ogni scroll, ogni transizione, ogni dettaglio è pensato per tenere una persona incollata allo schermo — e portarla dove serve a te. Design e codice non sono due fasi separate, sono la stessa cosa.
+    </p>
+    <div class="studio__grid">
+      <div class="studio__item reveal-up">
+        <h3>Su misura, mai template</h3>
+        <p>Ogni progetto parte da zero sul tuo brand. Nessun tema preconfezionato, nessun sito uguale a mille altri.</p>
+      </div>
+      <div class="studio__item reveal-up">
+        <h3>Il movimento ha uno scopo</h3>
+        <p>Le animazioni guidano l'occhio e raccontano. Mai effetti gratuiti che rallentano l'esperienza.</p>
+      </div>
+      <div class="studio__item reveal-up">
+        <h3>Veloce ovunque</h3>
+        <p>Codice leggero e ottimizzato: caricamenti rapidi, perfetto su mobile, pronto per Google.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ SERVIZI ============ -->
+  <section class="section servizi" id="servizi">
+    <div class="sec-head">
+      <span class="sec-num">02</span>
+      <span class="sec-label">Servizi</span>
+    </div>
+    <h2 class="h2" data-split>Cosa posso costruire per te</h2>
+
+    <div class="cards">
+      <article class="card" data-hover>
+        <div class="card__num">01</div>
+        <div class="card__body">
+          <h3>Siti vetrina &amp; portfolio</h3>
+          <p>La presenza online della tua attività: elegante, chiara, credibile. Struttura pensata per far arrivare il messaggio giusto in pochi secondi.</p>
+        </div>
+        <div class="card__tags"><span>Design</span><span>Sviluppo</span><span>Responsive</span></div>
+      </article>
+
+      <article class="card" data-hover>
+        <div class="card__num">02</div>
+        <div class="card__body">
+          <h3>Landing page che convertono</h3>
+          <p>Una pagina, un obiettivo. Copy, gerarchia visiva e call to action costruite per trasformare i visitatori in contatti reali.</p>
+        </div>
+        <div class="card__tags"><span>Conversione</span><span>A/B ready</span><span>Analytics</span></div>
+      </article>
+
+      <article class="card" data-hover>
+        <div class="card__num">03</div>
+        <div class="card__body">
+          <h3>Animazioni &amp; 3D interattivo</h3>
+          <p>GSAP, ScrollTrigger e Three.js per esperienze che si distinguono davvero. Il livello di questo sito, applicato al tuo brand.</p>
+        </div>
+        <div class="card__tags"><span>GSAP</span><span>Three.js</span><span>WebGL</span></div>
+      </article>
+
+      <article class="card" data-hover>
+        <div class="card__num">04</div>
+        <div class="card__body">
+          <h3>Performance &amp; SEO tecnica</h3>
+          <p>Un sito bello che nessuno trova non serve. Ottimizzo velocità, struttura semantica e dati per i motori di ricerca.</p>
+        </div>
+        <div class="card__tags"><span>Core Web Vitals</span><span>Semantica</span><span>Schema</span></div>
+      </article>
+    </div>
+  </section>
+
+  <!-- ============ LAVORI ============ -->
+  <section class="section lavori" id="lavori">
+    <div class="sec-head">
+      <span class="sec-num">03</span>
+      <span class="sec-label">Lavori</span>
+    </div>
+    <h2 class="h2" data-split>Cosa possiamo realizzare</h2>
+
+    <div class="works">
+
+      <!-- 01 — Sito per struttura ricettiva, con anteprima navigabile -->
+      <article class="work">
+        <div class="work__visual work__visual--site">
+          <div class="minisite">
+            <div class="minisite__bar">
+              <span class="minisite__dot"></span><span class="minisite__dot"></span><span class="minisite__dot"></span>
+              <div class="minisite__url">villaserena.it</div>
+            </div>
+            <div class="minisite__viewport">
+              <div class="minisite__page">
+                <!-- hero della struttura -->
+                <div class="ms-hero">
+                  <div class="ms-nav">
+                    <span class="ms-logo">Villa Serena</span>
+                    <span class="ms-links"><i></i><i></i><i></i><i></i></span>
+                    <span class="ms-btn">Prenota</span>
+                  </div>
+                  <div class="ms-hero__txt">
+                    <span class="ms-eyebrow">Costiera Amalfitana</span>
+                    <h4>Dove il mare<br>si ferma a dormire</h4>
+                    <span class="ms-cta">Verifica disponibilità</span>
+                  </div>
+                </div>
+                <!-- camere -->
+                <div class="ms-sec">
+                  <span class="ms-sec__title">Le nostre camere</span>
+                  <div class="ms-rooms">
+                    <div class="ms-room"><div class="ms-room__img ms-img-a"></div><span>Suite Vista Mare</span><i>da 180€</i></div>
+                    <div class="ms-room"><div class="ms-room__img ms-img-b"></div><span>Camera Giardino</span><i>da 120€</i></div>
+                    <div class="ms-room"><div class="ms-room__img ms-img-c"></div><span>Attico Terrazza</span><i>da 240€</i></div>
+                  </div>
+                </div>
+                <!-- servizi -->
+                <div class="ms-sec ms-sec--alt">
+                  <span class="ms-sec__title">Servizi inclusi</span>
+                  <div class="ms-serv"><span>Colazione</span><span>Piscina</span><span>Wi-Fi</span><span>Parcheggio</span></div>
+                </div>
+                <!-- galleria + footer -->
+                <div class="ms-gallery"><div class="ms-img-b"></div><div class="ms-img-c"></div><div class="ms-img-a"></div></div>
+                <div class="ms-foot"><span>Villa Serena · Amalfi</span><span class="ms-btn">Prenota ora</span></div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="work__info">
+          <h3>Sito web per B&amp;B, ville e resort</h3>
+          <p>Presentazione delle camere, gallery e servizi, con un rimando diretto ai portali dove gli ospiti già prenotano con fiducia — Airbnb, Booking.com e simili. È la soluzione più solida: zero pensieri su pagamenti, calendari e disponibilità da gestire, mentre il sito fa il suo lavoro migliore, cioè convincere chi arriva a cliccare "prenota".</p>
+          <span class="work__year">Anteprima live · Struttura ricettiva</span>
+        </div>
+      </article>
+
+      <!-- 02 — Landing page, con anteprima navigabile -->
+      <article class="work work--reverse">
+        <div class="work__visual work__visual--site">
+          <div class="minisite minisite--land">
+            <div class="minisite__bar">
+              <span class="minisite__dot"></span><span class="minisite__dot"></span><span class="minisite__dot"></span>
+              <div class="minisite__url">launchpad.app</div>
+            </div>
+            <div class="minisite__viewport">
+              <div class="minisite__page">
+                <!-- hero della landing -->
+                <div class="ml-hero">
+                  <div class="ml-nav">
+                    <span class="ml-logo">Launchpad</span>
+                    <span class="ml-links"><i></i><i></i><i></i></span>
+                    <span class="ml-btn">Prova gratis</span>
+                  </div>
+                  <div class="ml-hero__txt">
+                    <span class="ml-eyebrow">Nuovo · versione 2.0</span>
+                    <h4>Lancia il tuo prodotto<br>in giorni, non mesi</h4>
+                    <p>La landing page pensata per convertire dal primo secondo di scroll.</p>
+                    <span class="ml-cta">Inizia ora — è gratis</span>
+                  </div>
+                </div>
+                <!-- punti di forza -->
+                <div class="ml-sec">
+                  <div class="ml-features">
+                    <div class="ml-feature"><span class="ml-feature__ico"></span><span>Velocissima</span></div>
+                    <div class="ml-feature"><span class="ml-feature__ico"></span><span>Sicura</span></div>
+                    <div class="ml-feature"><span class="ml-feature__ico"></span><span>Scalabile</span></div>
+                  </div>
+                </div>
+                <!-- loghi clienti -->
+                <div class="ml-sec ml-sec--alt">
+                  <span class="ml-sec__title">Scelto da team come</span>
+                  <div class="ml-logos"><i></i><i></i><i></i><i></i></div>
+                </div>
+                <!-- piani -->
+                <div class="ml-sec">
+                  <span class="ml-sec__title">Piani</span>
+                  <div class="ml-pricing">
+                    <div class="ml-plan"><span>Base</span><i>0€</i></div>
+                    <div class="ml-plan ml-plan--hi"><span>Pro</span><i>19€</i></div>
+                    <div class="ml-plan"><span>Team</span><i>49€</i></div>
+                  </div>
+                </div>
+                <!-- cta finale -->
+                <div class="ml-foot"><span>Pronto a partire?</span><span class="ml-btn">Crea account</span></div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="work__info">
+          <h3>Landing page che convertono</h3>
+          <p>Una pagina, un solo obiettivo. Struttura pensata per portare il visitatore dalla prima riga alla call to action senza distrazioni — ideale per lanci di prodotto, app e servizi in abbonamento.</p>
+          <span class="work__year">Anteprima live · Landing page</span>
+        </div>
+      </article>
+
+      <!-- 03 — Sito vetrina / portfolio, con anteprima navigabile -->
+      <article class="work">
+        <div class="work__visual work__visual--site">
+          <div class="minisite minisite--gallery">
+            <div class="minisite__bar">
+              <span class="minisite__dot"></span><span class="minisite__dot"></span><span class="minisite__dot"></span>
+              <div class="minisite__url">noravetro.studio</div>
+            </div>
+            <div class="minisite__viewport">
+              <div class="minisite__page">
+                <!-- hero -->
+                <div class="mv-hero">
+                  <div class="mv-nav">
+                    <span class="mv-logo">Nora Vetro</span>
+                    <span class="mv-links"><i></i><i></i><i></i></span>
+                    <span class="mv-btn">Contatti</span>
+                  </div>
+                  <div class="mv-hero__row">
+                    <div class="mv-hero__txt">
+                      <span class="mv-eyebrow">Fotografa &amp; regista</span>
+                      <h4>Racconto per immagini</h4>
+                    </div>
+                    <div class="mv-hero__img"></div>
+                  </div>
+                </div>
+                <!-- lavori -->
+                <div class="mv-sec">
+                  <span class="mv-sec__title">Lavori selezionati</span>
+                  <div class="mv-grid">
+                    <div class="mv-tile mv-img-a"><span>Reportage · Islanda</span></div>
+                    <div class="mv-tile mv-img-b"><span>Ritratti · Milano</span></div>
+                    <div class="mv-tile mv-img-c"><span>Editoriale · Vogue IT</span></div>
+                    <div class="mv-tile mv-img-d"><span>Backstage · Sanremo</span></div>
+                  </div>
+                </div>
+                <!-- bio -->
+                <div class="mv-sec mv-sec--alt">
+                  <span class="mv-sec__title">Chi sono</span>
+                  <p class="mv-bio">Da dieci anni racconto persone e luoghi per riviste e brand internazionali. Ogni progetto nasce da una domanda semplice: cosa rende unico questo momento?</p>
+                </div>
+                <!-- footer -->
+                <div class="mv-foot"><span>Nora Vetro · Milano</span><span class="mv-btn">Scrivimi</span></div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="work__info">
+          <h3>Siti vetrina e portfolio</h3>
+          <p>La presenza online di un professionista o di un piccolo studio: chi sei, cosa fai, i lavori migliori e un modo semplice per essere contattato. Essenziale, curato, senza fronzoli inutili.</p>
+          <span class="work__year">Anteprima live · Sito vetrina</span>
+        </div>
+      </article>
+
+    </div>
+    <p class="works__note">Entrambe le anteprime qui sopra sono reali e funzionanti: non sono immagini, ma esattamente la tecnologia che userei sul tuo sito.</p>
+  </section>
+
+  <!-- ============ PROCESSO ============ -->
+  <section class="section processo" id="processo">
+    <div class="sec-head">
+      <span class="sec-num">04</span>
+      <span class="sec-label">Processo</span>
+    </div>
+    <div class="proc">
+      <div class="proc__sticky">
+        <h2 class="h2">Come lavoriamo<br><em>insieme</em></h2>
+        <p class="proc__intro">Quattro fasi, tempi chiari, nessuna sorpresa. Sei coinvolto in ogni passaggio.</p>
+        <div class="proc__progress"><span id="procBar"></span></div>
+      </div>
+      <div class="proc__steps">
+        <div class="step">
+          <span class="step__n">01</span>
+          <h3>Ascolto</h3>
+          <p>Capiamo insieme obiettivi, pubblico e cosa ti distingue dagli altri. Da qui nasce tutto il resto: senza una strategia chiara, il design è solo decorazione.</p>
+        </div>
+        <div class="step">
+          <span class="step__n">02</span>
+          <h3>Design</h3>
+          <p>Ti presento un paio di bozze diverse del sito, ognuna con un'idea visiva propria. Scegli quella che ti rappresenta di più, e da lì costruiamo insieme la grafica definitiva, sezione per sezione — così ogni scelta successiva parte già dalla direzione giusta.</p>
+        </div>
+        <div class="step">
+          <span class="step__n">03</span>
+          <h3>Sviluppo</h3>
+          <p>Codice pulito, animazioni su misura, test su ogni dispositivo. In questa fase ti tengo aggiornato passo dopo passo sui progressi, così sai sempre a che punto siamo.</p>
+        </div>
+        <div class="step">
+          <span class="step__n">04</span>
+          <h3>Lancio &amp; cura</h3>
+          <p>Messa online, configurazione dominio, analytics e SEO tecnica. Poi resto disponibile per aggiornamenti e miglioramenti nel tempo.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ IMPEGNI ============ -->
+  <section class="section promesse">
+    <div class="stats">
+      <div class="stat reveal-up"><span class="stat__v" data-count="100">0</span><span class="stat__u">%</span><p>Su misura, zero template</p></div>
+      <div class="stat reveal-up"><span class="stat__v" data-count="60">0</span><span class="stat__u">fps</span><p>Animazioni fluide su ogni device</p></div>
+      <div class="stat reveal-up"><span class="stat__v" data-count="3">0</span><span class="stat__u">sett.</span><p>Tempo medio di realizzazione</p></div>
+      <div class="stat reveal-up"><span class="stat__v" data-count="1">0</span><span class="stat__u">:1</span><p>Un solo referente, sempre io</p></div>
+    </div>
+  </section>
+
+  <!-- ============ CONTATTI ============ -->
+  <section class="section contatti" id="contatti">
+    <p class="eyebrow reveal-up"><span class="pulse"></span> Prossimo progetto</p>
+    <h2 class="cta__title">
+      <span class="line">Hai un'idea?</span>
+      <span class="line"><em>Costruiamola.</em></span>
+    </h2>
+    <a href="mailto:danilo.picicci.20@gmail.com?subject=Nuovo%20progetto%20web" class="cta__mail" data-hover>danilo.picicci.20@gmail.com</a>
+    <p class="cta__note">Rispondo entro 24 ore. Primo confronto gratuito e senza impegno.</p>
+  </section>
+
+</main>
+
+<footer class="footer">
+  <span>© 2026 Fluids Studio</span>
+  <span class="footer__mid">Costruito con GSAP + Three.js</span>
+  <a href="#top" data-hover>Torna su ↑</a>
+</footer>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/ScrollTrigger.min.js"></script>
+<script src="main.js"></script>
+</body>
+</html>

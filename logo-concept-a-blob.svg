@@ -1,0 +1,23 @@
+<svg viewBox="0 0 640 200" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="gA" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#7c5cff"/>
+      <stop offset="55%" stop-color="#00e2b8"/>
+      <stop offset="100%" stop-color="#ff5c8a"/>
+    </linearGradient>
+    <filter id="blobFilterA" x="-60%" y="-60%" width="220%" height="220%">
+      <feTurbulence type="fractalNoise" baseFrequency="0.018 0.028" numOctaves="2" seed="4" result="n"/>
+      <feDisplacementMap in="SourceGraphic" in2="n" scale="13" xChannelSelector="R" yChannelSelector="G"/>
+    </filter>
+  </defs>
+
+  <rect width="640" height="200" rx="20" fill="#07070a"/>
+
+  <!-- goccia liquida -->
+  <circle cx="82" cy="100" r="48" fill="url(#gA)" filter="url(#blobFilterA)"/>
+  <circle cx="66" cy="82" r="14" fill="#ffffff" opacity=".22" filter="url(#blobFilterA)"/>
+
+  <!-- wordmark -->
+  <text x="156" y="96" font-family="Georgia, 'Times New Roman', serif" font-style="italic" font-size="46" fill="#f4f2ee">Fluid</text>
+  <text x="156" y="140" font-family="Arial, Helvetica, sans-serif" font-size="20" letter-spacing="6" fill="#c2c0c9">STUDIO</text>
+</svg>

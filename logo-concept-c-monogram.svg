@@ -1,0 +1,21 @@
+<svg viewBox="0 0 640 200" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="gC" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#7c5cff"/>
+      <stop offset="55%" stop-color="#00e2b8"/>
+      <stop offset="100%" stop-color="#ff5c8a"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="640" height="200" rx="20" fill="#07070a"/>
+
+  <!-- badge monogramma: F con tratti ondulati -->
+  <circle cx="86" cy="100" r="54" fill="none" stroke="url(#gC)" stroke-width="2"/>
+  <path d="M64 65 L64 135" stroke="#f4f2ee" stroke-width="8" stroke-linecap="round" fill="none"/>
+  <path d="M64 68 C 80 60, 96 76, 112 68" stroke="url(#gC)" stroke-width="8" stroke-linecap="round" fill="none"/>
+  <path d="M64 100 C 78 93, 90 107, 104 100" stroke="url(#gC)" stroke-width="8" stroke-linecap="round" fill="none"/>
+
+  <!-- wordmark -->
+  <text x="168" y="96" font-family="Georgia, 'Times New Roman', serif" font-style="italic" font-size="46" fill="#f4f2ee">Fluid</text>
+  <text x="168" y="140" font-family="Arial, Helvetica, sans-serif" font-size="20" letter-spacing="6" fill="#c2c0c9">STUDIO</text>
+</svg>
