@@ -254,6 +254,23 @@ main, .nav, .footer{ position:relative; z-index:2; }
   margin-top:44px; display:flex; align-items:center; gap:14px;
   font-size:12px; font-weight:500; letter-spacing:.22em; text-transform:uppercase; color:var(--ink-dim);
 }
+
+/* stato iniziale "nascosto" per l'intro della hero: scritto qui nel CSS
+   (non solo nel JS) così il contenuto resta invisibile fin dal primo
+   fotogramma, anche mentre il preloader scivola via. Se lo script non
+   riesce a partire, la rete di sicurezza in main.js (blocco DOMContentLoaded,
+   controllo "if (!hasGSAP)") lo rimette visibile subito. */
+.nav,
+.hero__eyebrow,
+.hero__title .line > span,
+.hero__sub .word i,
+.hero .btn,
+.hero__scroll{ opacity:0; }
+.nav{ transform:translateY(-100%); }
+.hero__eyebrow{ transform:translateY(20px); }
+.hero__title .line > span{ transform:translateY(110%); }
+.hero__sub .word i{ transform:translateY(110%); }
+.hero .btn{ transform:translateY(24px); }
 .hero__scrollline{ width:70px; height:1px; background:var(--line); overflow:hidden; }
 .hero__scrollline i{ display:block; width:30%; height:100%; background:var(--accent); animation:sl 2.2s var(--ease) infinite; }
 @keyframes sl{ 0%{transform:translateX(-110%)} 100%{transform:translateX(340%)} }

@@ -285,17 +285,17 @@
      ================================================== */
   function heroIn() {
     if (!hasGSAP) return;
-    const lines = document.querySelectorAll('.hero__title .line');
-    lines.forEach(l => { if (!l.querySelector(':scope > span')) l.innerHTML = `<span>${l.innerHTML}</span>`; });
-
+    // il CSS parte già "nascosto" (vedi styles.css): qui si anima verso lo
+    // stato visibile con .to(), non più .from() — evita qualunque lampo di
+    // contenuto grezzo mentre il preloader scivola via.
     const tl = gsap.timeline({ defaults: { ease: 'expo.out' } });
-    tl.from('.nav', { yPercent: -100, opacity: 0, duration: 1 }, 0)
+    tl.to('.nav', { yPercent: 0, opacity: 1, duration: 1 }, 0)
       .to('.brandmark', { opacity: 1, duration: 1.1 }, .1)
-      .from('.hero__eyebrow', { y: 20, opacity: 0, duration: .9 }, .15)
-      .from('.hero__title .line > span', { yPercent: 110, duration: 1.35, stagger: .09 }, .2)
-      .from('.hero__sub .word i', { yPercent: 110, opacity: 0, duration: .9, stagger: .012 }, .75)
-      .from('.btn', { y: 24, opacity: 0, duration: .9 }, .95)
-      .from('.hero__scroll', { opacity: 0, duration: .8 }, 1.15);
+      .to('.hero__eyebrow', { y: 0, opacity: 1, duration: .9 }, .15)
+      .to('.hero__title .line > span', { yPercent: 0, opacity: 1, duration: 1.35, stagger: .09 }, .2)
+      .to('.hero__sub .word i', { yPercent: 0, opacity: 1, duration: .9, stagger: .012 }, .75)
+      .to('.hero .btn', { y: 0, opacity: 1, duration: .9 }, .95)
+      .to('.hero__scroll', { opacity: 1, duration: .8 }, 1.15);
   }
 
   function scrollAnims() {
@@ -504,8 +504,21 @@
      BOOT
      ================================================== */
   document.addEventListener('DOMContentLoaded', () => {
-    // prepara lo split della hero prima dell'intro
+    // prepara subito (prima ancora che il preloader sparisca) tutti i wrapper
+    // di testo usati dall'intro: così il CSS può nasconderli fin dal primo
+    // fotogramma e non c'è mai un istante in cui il testo "grezzo" è visibile.
     document.querySelectorAll('.hero [data-split]').forEach(splitWords);
+    document.querySelectorAll('.hero__title .line').forEach(l => {
+      if (!l.querySelector(':scope > span')) l.innerHTML = `<span>${l.innerHTML}</span>`;
+    });
+
+    // rete di sicurezza: se GSAP non è disponibile, il CSS lascerebbe questi
+    // elementi invisibili per sempre. Li rimettiamo a vista subito.
+    if (!hasGSAP) {
+      document.querySelectorAll(
+        '.nav, .hero__eyebrow, .hero__title .line > span, .hero__sub .word i, .hero .btn, .hero__scroll'
+      ).forEach(el => { el.style.opacity = 1; el.style.transform = 'none'; });
+    }
 
     cursor();
     cardGlow();
