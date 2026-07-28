@@ -22,6 +22,14 @@
 
 <!-- ============ PRELOADER ============ -->
 <div class="loader" id="loader">
+
+  <!-- Tenda liquida: è questo path — non un colore di sfondo — a coprire lo
+       schermo. Il suo bordo superiore viene ricostruito frame per frame in JS,
+       così può risalire ondeggiando invece di sfumare via. -->
+  <svg class="loader__curtain" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
+    <path id="loaderCurtain" fill="#07070a" d="M0 100 L100 100 L100 -25 L0 -25 Z"/>
+  </svg>
+
   <div class="loader__inner">
     <svg class="loader__mark" viewBox="0 0 240 240" aria-hidden="true">
       <defs>
@@ -29,20 +37,62 @@
           <stop offset="0%" stop-color="#8f7bff"/>
           <stop offset="100%" stop-color="#00e2b8"/>
         </linearGradient>
+        <!-- Filtro "goo": sfoca il gruppo e poi rialza brutalmente il contrasto
+             del canale alpha (l'ultima riga della matrice). Risultato: due forme
+             che si avvicinano non si sovrappongono, si SALDANO in una massa
+             unica, come due gocce di mercurio. -->
+        <filter id="goo" x="-45%" y="-45%" width="190%" height="190%"
+                color-interpolation-filters="sRGB">
+          <feGaussianBlur in="SourceGraphic" stdDeviation="9" result="b"/>
+          <feColorMatrix in="b" mode="matrix" result="g"
+                         values="1 0 0 0 0
+                                 0 1 0 0 0
+                                 0 0 1 0 0
+                                 0 0 0 24 -11"/>
+          <feBlend in="SourceGraphic" in2="g"/>
+        </filter>
       </defs>
-      <!-- anello di sfondo -->
-      <circle cx="120" cy="120" r="98" fill="none" stroke="rgba(244,242,238,.14)" stroke-width="2"/>
-      <!-- anello di avanzamento: si disegna da solo al posto della barra -->
+
+      <!-- Fase 1 — sei gocce sparse che convergono e si fondono -->
+      <g id="loaderBlobs" filter="url(#goo)">
+        <circle class="blob" cx="120" cy="120" r="20"/>
+        <circle class="blob" cx="120" cy="120" r="14"/>
+        <circle class="blob" cx="120" cy="120" r="17"/>
+        <circle class="blob" cx="120" cy="120" r="11"/>
+        <circle class="blob" cx="120" cy="120" r="15"/>
+        <circle class="blob" cx="120" cy="120" r="9"/>
+      </g>
+
+      <!-- Fase 2 — anello e onda si disegnano sopra la massa liquida -->
+      <circle id="loaderRingBg" cx="120" cy="120" r="98" fill="none"
+              stroke="rgba(244,242,238,.12)" stroke-width="2"/>
       <circle id="loaderRing" class="loader__ring" cx="120" cy="120" r="98" pathLength="1"
               fill="none" stroke="url(#gRingLoader)" stroke-width="2.5" stroke-linecap="round"/>
-      <!-- onda: emerge man mano che il caricamento procede -->
       <path id="loaderWave" d="M64 134 C 82 98, 100 98, 120 120 C 140 142, 158 142, 176 106" pathLength="1"
             fill="none" stroke="url(#gRingLoader)" stroke-width="6.5" stroke-linecap="round"/>
       <path id="loaderWave2" d="M70 150 C 86 122, 102 122, 120 140 C 138 158, 154 158, 170 130" pathLength="1"
             fill="none" stroke="url(#gRingLoader)" stroke-width="2.5" stroke-linecap="round" opacity=".28"/>
-      <circle id="loaderDrop" cx="176" cy="106" r="4.2" fill="url(#gRingLoader)"/>
+      <!-- la goccia non "compare": cavalca l'onda mentre viene disegnata -->
+      <circle id="loaderDrop" cx="64" cy="134" r="5" fill="url(#gRingLoader)"/>
     </svg>
-    <div class="loader__label">Fluids Studio</div>
+
+    <!-- Fase 3 — il wordmark si riempie di liquido: due copie dello stesso
+         testo, la seconda ritagliata da una mask la cui superficie ondeggia. -->
+    <svg class="loader__word" viewBox="0 0 420 40" aria-hidden="true">
+      <defs>
+        <linearGradient id="gWord" x1="0%" y1="0%" x2="100%" y2="0%">
+          <stop offset="0%" stop-color="#8f7bff"/>
+          <stop offset="55%" stop-color="#7c5cff"/>
+          <stop offset="100%" stop-color="#00e2b8"/>
+        </linearGradient>
+        <text id="loaderWordText" x="206" y="27" text-anchor="middle">FLUIDS STUDIO</text>
+        <mask id="mWord" maskUnits="userSpaceOnUse" x="0" y="-12" width="420" height="64">
+          <path id="loaderFill" fill="#fff" d="M0 44 L420 44 L420 48 L0 48 Z"/>
+        </mask>
+      </defs>
+      <use href="#loaderWordText" class="lw lw--ghost"/>
+      <use href="#loaderWordText" class="lw lw--fill" mask="url(#mWord)"/>
+    </svg>
   </div>
 </div>
 

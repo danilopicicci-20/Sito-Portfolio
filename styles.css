@@ -62,24 +62,54 @@ em{ font-family:var(--serif); font-style:italic; font-weight:400; }
 /* =============== PRELOADER =============== */
 .loader{
   position:fixed; inset:0; z-index:200;
+  /* fondo pieno solo finché la tenda non prende il comando: evita che un JS
+     lento lasci intravedere la pagina nel primo fotogramma */
   background:var(--bg);
   display:flex; align-items:center; justify-content:center;
 }
-.loader__inner{ width:min(420px, 76vw); text-align:center; }
+/* il path che copre lo schermo; a fine sequenza risale ondeggiando */
+.loader__curtain{
+  position:absolute; inset:0;
+  width:100%; height:100%;
+  display:block; pointer-events:none;
+}
+.loader__inner{
+  position:relative;
+  width:min(460px, 84vw); text-align:center;
+}
 .loader__mark{
-  width:clamp(88px,14vw,124px); height:clamp(88px,14vw,124px);
-  display:block; margin:0 auto 22px;
+  width:clamp(96px,15vw,132px); height:clamp(96px,15vw,132px);
+  display:block; margin:0 auto 26px;
   overflow:visible;
 }
+/* le gocce del metaball: stesso gradiente del logo */
+.blob{ fill:url(#gRingLoader); }
+#loaderBlobs{ opacity:0; }
+#loaderRingBg{ opacity:0; }
 /* l'anello parte "non disegnato": pathLength=1 permette di usare valori
    normalizzati (0 = pieno, 1 = vuoto) invece della circonferenza reale */
 .loader__ring{ stroke-dasharray:1; stroke-dashoffset:1; }
 #loaderWave, #loaderWave2{ stroke-dasharray:1; stroke-dashoffset:1; }
 #loaderDrop{ opacity:0; }
-/* stessa impostazione del logotipo in hero, per coerenza */
-.loader__label{
-  font-size:13px; font-weight:300; letter-spacing:.34em; text-transform:uppercase;
-  color:var(--ink-dim); margin-right:-.34em;
+
+/* wordmark che si riempie di liquido */
+.loader__word{
+  width:min(330px, 74vw); height:auto;
+  display:block; margin:0 auto; overflow:visible;
+  opacity:0;
+}
+.lw{
+  font-family:var(--sans);
+  font-size:21px; font-weight:300; letter-spacing:7.5px;
+}
+.lw--ghost{ fill:rgba(244,242,238,.15); }
+.lw--fill{ fill:url(#gWord); }
+
+/* niente coreografia se l'utente ha chiesto meno movimento */
+@media (prefers-reduced-motion:reduce){
+  #loaderBlobs, #loaderRingBg, .loader__word{ opacity:1; }
+  .loader__ring, #loaderWave, #loaderWave2{ stroke-dashoffset:0; }
+  #loaderDrop{ opacity:1; }
 }
 
 /* =============== CURSOR =============== */

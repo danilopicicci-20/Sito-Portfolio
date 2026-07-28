@@ -249,46 +249,157 @@
 
   /* ==================================================
      3. PRELOADER
+     ==================================================
+     Quattro fasi, tutte sullo stesso tema "fluido":
+       1. gocce sparse che si FONDONO grazie al filtro SVG #goo
+       2. la massa si schiaccia e l'onda del logo si disegna sopra,
+          con una goccia che la cavalca (getPointAtLength, non un plugin)
+       3. il wordmark si riempie di liquido attraverso una mask SVG
+       4. la tenda risale con un bordo ondulato
+     Le due superfici liquide (3 e 4) non sono keyframe: il path viene
+     RIGENERATO a ogni frame da una somma di sinusoidi, così il profilo
+     non si ripete mai identico. Costo: due setAttribute per frame.
      ================================================== */
+
+  /* Superficie liquida che sale: `level` 0 = vuoto, 1 = pieno.
+     Due sinusoidi con periodo non multiplo l'una dell'altra → il profilo
+     sembra irregolare pur essendo deterministico. */
+  function liquidRise(level, phase, W, H, amp) {
+    const base = H + amp - level * (H + amp * 2);
+    const N = 40;
+    let d = '';
+    for (let i = 0; i <= N; i++) {
+      const u = i / N, x = W * u;
+      const y = base
+        + amp * Math.sin(u * Math.PI * 3.1 + phase)
+        + amp * 0.42 * Math.sin(u * Math.PI * 5.7 - phase * 1.45);
+      d += (i ? ' L' : 'M') + x.toFixed(1) + ' ' + y.toFixed(2);
+    }
+    return d + ` L${W} ${(H + amp + 6).toFixed(1)} L0 ${(H + amp + 6).toFixed(1)} Z`;
+  }
+
+  /* Tenda: stessa idea, ma la superficie separa il pieno (sopra) dal vuoto
+     (sotto) e sale fuori schermo. `p` 0 = copre tutto, 1 = uscita completata. */
+  function curtainRise(p, phase, amp) {
+    const N = 34, base = 100 + amp - p * (120 + amp * 2);
+    let d = '';
+    for (let i = 0; i <= N; i++) {
+      const u = i / N, x = 100 * u;
+      const y = base
+        + amp * Math.sin(u * Math.PI * 2.4 + phase)
+        + amp * 0.40 * Math.sin(u * Math.PI * 4.6 - phase * 1.3);
+      d += (i ? ' L' : 'M') + x.toFixed(2) + ' ' + y.toFixed(2);
+    }
+    return d + ' L100 -25 L0 -25 Z';
+  }
+
   function runLoader(onDone) {
     const loader = document.getElementById('loader');
     document.body.classList.add('is-loading');
 
-    const finish = () => {
+    const release = () => {
       document.body.classList.remove('is-loading');
-      loader.style.display = 'none';
       onDone();
     };
+    const hide = () => { loader.style.display = 'none'; };
 
-    if (!hasGSAP) { finish(); return; }
+    // senza GSAP, o se l'utente ha chiesto meno movimento, si salta tutto
+    if (!hasGSAP || reduced) { release(); hide(); return; }
 
-    // Il logo si costruisce da solo: l'anello si chiude, l'onda scorre dentro,
-    // la goccia compare alla fine. Nessuna barra, nessuna percentuale.
+    const blobs   = gsap.utils.toArray('#loaderBlobs .blob');
+    const fillEl  = document.getElementById('loaderFill');
+    const curtEl  = document.getElementById('loaderCurtain');
+    const waveEl  = document.getElementById('loaderWave');
+    const dropEl  = document.getElementById('loaderDrop');
+    const waveLen = waveEl.getTotalLength();
+
+    // posizioni di partenza delle gocce, come scarti dal centro del viewBox
+    const scatter = [[-80,-44],[74,-64],[-58,70],[86,36],[6,-92],[-16,88]];
+
+    // stato letto dal ticker: GSAP interpola i numeri, il ticker ridisegna
+    const liq = { level: 0 };
+    const cur = { p: 0 };
+
+    const paint = () => {
+      const t = performance.now() / 1000;
+      fillEl.setAttribute('d', liquidRise(liq.level, t * 2.5, 420, 40, 3.2));
+      // l'onda della tenda cresce e poi si ricompone: massima a metà corsa
+      const amp = 7.5 * Math.sin(Math.min(1, Math.max(0, cur.p)) * Math.PI);
+      curtEl.setAttribute('d', curtainRise(cur.p, t * 2.1, amp));
+    };
+    paint();
+    gsap.ticker.add(paint);
+
+    // in pausa finché il font non c'è: il wordmark è testo SVG, con un
+    // fallback di sistema le spaziature sarebbero tutte sbagliate
     const tl = gsap.timeline({
-      onComplete: () => {
-        document.body.classList.remove('is-loading');
-        gsap.to(loader, {
-          opacity: 0, duration: .5, ease: 'power2.inOut',
-          onComplete: () => { loader.style.display = 'none'; onDone(); }
-        });
-      }
+      paused: true,
+      onComplete: () => { gsap.ticker.remove(paint); hide(); }
     });
 
-    tl.fromTo('#loaderRing',
+    /* --- FASE 1 · le gocce compaiono sparse e convergono --- */
+    tl.set('#loaderBlobs', { opacity: 1 }, 0)
+      .fromTo(blobs,
+        { scale: 0, x: i => scatter[i][0], y: i => scatter[i][1] },
+        { scale: 1, duration: .55, ease: 'back.out(2.2)', stagger: .05 }, 0)
+      .to(blobs, { x: 0, y: 0, duration: .9, ease: 'power3.inOut', stagger: .025 }, .35)
+
+    /* --- FASE 2 · la massa si schiaccia, anello e onda si disegnano --- */
+      .to('#loaderBlobs', {
+        scaleX: 1.5, scaleY: .3, transformOrigin: '50% 50%',
+        duration: .45, ease: 'power2.in'
+      }, 1.1)
+      .to('#loaderBlobs', { opacity: 0, duration: .5, ease: 'power2.out' }, 1.35)
+      .to('#loaderRingBg', { opacity: 1, duration: .5 }, .6)
+      .fromTo('#loaderRing',
         { strokeDashoffset: 1 },
-        { strokeDashoffset: 0, duration: 1, ease: 'power2.inOut' }, 0)
-      .fromTo(['#loaderWave', '#loaderWave2'],
+        { strokeDashoffset: 0, duration: 1.15, ease: 'power2.inOut' }, .6)
+      .fromTo('#loaderWave',
         { strokeDashoffset: 1 },
-        { strokeDashoffset: 0, duration: .8, ease: 'power2.out', stagger: .1 }, .35)
-      .fromTo('#loaderDrop',
-        { opacity: 0, scale: 0, transformOrigin: '176px 106px' },
-        { opacity: 1, scale: 1, duration: .35, ease: 'back.out(2.5)' }, .95)
-      .fromTo('.loader__label',
-        { opacity: 0, y: 8, letterSpacing: '.5em' },
-        { opacity: 1, y: 0, letterSpacing: '.28em', duration: .6, ease: 'power2.out' }, .5)
-      // battito finale: tutto il logo "respira" una volta prima di uscire
-      .to('.loader__mark', { scale: 1.06, duration: .22, ease: 'power2.out' }, 1.15)
-      .to('.loader__mark', { scale: 1, duration: .3, ease: 'power2.inOut' }, 1.37);
+        { strokeDashoffset: 0, duration: .85, ease: 'power2.out' }, 1.4)
+      .fromTo('#loaderWave2',
+        { strokeDashoffset: 1 },
+        { strokeDashoffset: 0, duration: .75, ease: 'power2.out' }, 1.6)
+      // la goccia percorre il tracciato in sincrono con il tratto che appare:
+      // sembra che sia lei a dipingere l'onda
+      .set(dropEl, { opacity: 1 }, 1.4)
+      .to({ u: 0 }, {
+        u: 1, duration: .85, ease: 'power2.out',
+        onUpdate() {
+          const pt = waveEl.getPointAtLength(this.targets()[0].u * waveLen);
+          dropEl.setAttribute('cx', pt.x.toFixed(2));
+          dropEl.setAttribute('cy', pt.y.toFixed(2));
+        }
+      }, 1.4)
+      .fromTo(dropEl, { scale: .4 }, { scale: 1, duration: .4, ease: 'back.out(3)' }, 2.15)
+
+    /* --- FASE 3 · il wordmark si riempie --- */
+      .to('.loader__word', { opacity: 1, duration: .5, ease: 'power2.out' }, 1.5)
+      .to(liq, { level: 1, duration: 1.1, ease: 'power2.inOut' }, 1.7)
+
+    /* --- FASE 4 · respiro e uscita a tenda --- */
+      .to('.loader__mark', { scale: 1.05, duration: .26, ease: 'power2.out' }, 2.85)
+      .to('.loader__mark', { scale: 1, duration: .34, ease: 'power2.inOut' }, 3.11)
+      // da qui la copertura è solo il path: senza questo, il fondo pieno del
+      // pannello resterebbe visibile sotto la tenda che sale
+      .call(() => { loader.style.background = 'transparent'; }, null, 3.15)
+      // la hero parte mentre la tenda risale, così si scopre già animata
+      .call(release, null, 3.18)
+      .to('.loader__inner', { y: -80, opacity: 0, duration: .65, ease: 'power2.in' }, 3.15)
+      .to(cur, { p: 1, duration: 1, ease: 'power2.inOut' }, 3.2);
+
+    // ~4,2 s a velocità 1: troppo. 1,35× lo porta a ~3,1 s.
+    // Chi ha già visto l'intro in questa sessione se la becca in ~1,3 s.
+    let seen = false;
+    try { seen = sessionStorage.getItem('fs_intro') === '1'; sessionStorage.setItem('fs_intro', '1'); } catch (e) {}
+    tl.timeScale(seen ? 3.2 : 1.35);
+
+    // si parte quando i font sono pronti, ma non si aspetta oltre 700 ms
+    let started = false;
+    const start = () => { if (!started) { started = true; tl.play(); } };
+    setTimeout(start, 700);
+    if (document.fonts && document.fonts.ready) document.fonts.ready.then(start);
+    else start();
   }
 
   /* ==================================================
