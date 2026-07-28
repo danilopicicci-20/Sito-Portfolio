@@ -67,21 +67,18 @@ em{ font-family:var(--serif); font-style:italic; font-weight:400; }
 }
 .loader__inner{ width:min(420px, 76vw); text-align:center; }
 .loader__mark{
-  width:clamp(48px,8vw,64px); height:clamp(48px,8vw,64px);
-  display:block; margin:0 auto 18px;
+  width:clamp(88px,14vw,124px); height:clamp(88px,14vw,124px);
+  display:block; margin:0 auto 22px;
+  overflow:visible;
 }
+/* l'anello parte "non disegnato": pathLength=1 permette di usare valori
+   normalizzati (0 = pieno, 1 = vuoto) invece della circonferenza reale */
+.loader__ring{ stroke-dasharray:1; stroke-dashoffset:1; }
+#loaderWave, #loaderWave2{ stroke-dasharray:1; stroke-dashoffset:1; }
+#loaderDrop{ opacity:0; }
 .loader__label{
   font-size:12.5px; font-weight:500; letter-spacing:.28em; text-transform:uppercase;
-  color:var(--ink-dim); margin-bottom:22px;
-}
-.loader__bar{ height:1px; background:var(--line); overflow:hidden; }
-.loader__bar span{
-  display:block; height:100%; width:0%;
-  background:linear-gradient(90deg,var(--accent),var(--accent-2));
-}
-.loader__count{
-  margin-top:14px; font-size:13px; color:var(--ink-dim);
-  font-variant-numeric:tabular-nums;
+  color:var(--ink-dim);
 }
 
 /* =============== CURSOR =============== */
@@ -255,22 +252,17 @@ main, .nav, .footer{ position:relative; z-index:2; }
   font-size:12px; font-weight:500; letter-spacing:.22em; text-transform:uppercase; color:var(--ink-dim);
 }
 
-/* stato iniziale "nascosto" per l'intro della hero: scritto qui nel CSS
-   (non solo nel JS) così il contenuto resta invisibile fin dal primo
-   fotogramma, anche mentre il preloader scivola via. Se lo script non
-   riesce a partire, la rete di sicurezza in main.js (blocco DOMContentLoaded,
-   controllo "if (!hasGSAP)") lo rimette visibile subito. */
+/* Stato iniziale "nascosto" per l'intro della hero: qui si imposta SOLO
+   l'opacità, mai i transform. I movimenti li gestisce interamente GSAP con
+   fromTo(), altrimenti mescolare percentuali CSS e yPercent di GSAP lascia
+   gli elementi bloccati fuori posizione. Se lo script non parte, la rete di
+   sicurezza in main.js (blocco DOMContentLoaded) li rimette visibili. */
 .nav,
 .hero__eyebrow,
 .hero__title .line > span,
 .hero__sub .word i,
 .hero .btn,
 .hero__scroll{ opacity:0; }
-.nav{ transform:translateY(-100%); }
-.hero__eyebrow{ transform:translateY(20px); }
-.hero__title .line > span{ transform:translateY(110%); }
-.hero__sub .word i{ transform:translateY(110%); }
-.hero .btn{ transform:translateY(24px); }
 .hero__scrollline{ width:70px; height:1px; background:var(--line); overflow:hidden; }
 .hero__scrollline i{ display:block; width:30%; height:100%; background:var(--accent); animation:sl 2.2s var(--ease) infinite; }
 @keyframes sl{ 0%{transform:translateX(-110%)} 100%{transform:translateX(340%)} }

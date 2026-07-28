@@ -252,32 +252,43 @@
      ================================================== */
   function runLoader(onDone) {
     const loader = document.getElementById('loader');
-    const bar    = document.getElementById('loaderBar');
-    const count  = document.getElementById('loaderCount');
     document.body.classList.add('is-loading');
 
     const finish = () => {
       document.body.classList.remove('is-loading');
-      if (hasGSAP) {
-        gsap.to(loader, {
-          yPercent: -100, duration: 1.05, ease: 'expo.inOut',
-          onComplete: () => { loader.style.display = 'none'; onDone(); }
-        });
-      } else { loader.style.display = 'none'; onDone(); }
+      loader.style.display = 'none';
+      onDone();
     };
 
     if (!hasGSAP) { finish(); return; }
 
-    const state = { v: 0 };
-    gsap.to(state, {
-      v: 100, duration: 1.9, ease: 'power2.inOut',
-      onUpdate: () => {
-        const n = Math.round(state.v);
-        count.textContent = n;
-        bar.style.width = n + '%';
-      },
-      onComplete: finish
+    // Il logo si costruisce da solo: l'anello si chiude, l'onda scorre dentro,
+    // la goccia compare alla fine. Nessuna barra, nessuna percentuale.
+    const tl = gsap.timeline({
+      onComplete: () => {
+        document.body.classList.remove('is-loading');
+        gsap.to(loader, {
+          opacity: 0, duration: .5, ease: 'power2.inOut',
+          onComplete: () => { loader.style.display = 'none'; onDone(); }
+        });
+      }
     });
+
+    tl.fromTo('#loaderRing',
+        { strokeDashoffset: 1 },
+        { strokeDashoffset: 0, duration: 1, ease: 'power2.inOut' }, 0)
+      .fromTo(['#loaderWave', '#loaderWave2'],
+        { strokeDashoffset: 1 },
+        { strokeDashoffset: 0, duration: .8, ease: 'power2.out', stagger: .1 }, .35)
+      .fromTo('#loaderDrop',
+        { opacity: 0, scale: 0, transformOrigin: '176px 106px' },
+        { opacity: 1, scale: 1, duration: .35, ease: 'back.out(2.5)' }, .95)
+      .fromTo('.loader__label',
+        { opacity: 0, y: 8, letterSpacing: '.5em' },
+        { opacity: 1, y: 0, letterSpacing: '.28em', duration: .6, ease: 'power2.out' }, .5)
+      // battito finale: tutto il logo "respira" una volta prima di uscire
+      .to('.loader__mark', { scale: 1.06, duration: .22, ease: 'power2.out' }, 1.15)
+      .to('.loader__mark', { scale: 1, duration: .3, ease: 'power2.inOut' }, 1.37);
   }
 
   /* ==================================================
@@ -285,17 +296,29 @@
      ================================================== */
   function heroIn() {
     if (!hasGSAP) return;
-    // il CSS parte già "nascosto" (vedi styles.css): qui si anima verso lo
-    // stato visibile con .to(), non più .from() — evita qualunque lampo di
-    // contenuto grezzo mentre il preloader scivola via.
+    // fromTo(): GSAP imposta sia partenza sia arrivo, quindi le unità restano
+    // coerenti (niente mix tra percentuali CSS e yPercent). Il CSS tiene gli
+    // elementi a opacità 0 finché non parte questa timeline: nessun lampo.
     const tl = gsap.timeline({ defaults: { ease: 'expo.out' } });
-    tl.to('.nav', { yPercent: 0, opacity: 1, duration: 1 }, 0)
-      .to('.brandmark', { opacity: 1, duration: 1.1 }, .1)
-      .to('.hero__eyebrow', { y: 0, opacity: 1, duration: .9 }, .15)
-      .to('.hero__title .line > span', { yPercent: 0, opacity: 1, duration: 1.35, stagger: .09 }, .2)
-      .to('.hero__sub .word i', { yPercent: 0, opacity: 1, duration: .9, stagger: .012 }, .75)
-      .to('.hero .btn', { y: 0, opacity: 1, duration: .9 }, .95)
-      .to('.hero__scroll', { opacity: 1, duration: .8 }, 1.15);
+    tl.fromTo('.nav',
+        { yPercent: -100, opacity: 0 },
+        { yPercent: 0, opacity: 1, duration: .7 }, 0)
+      .to('.brandmark', { opacity: 1, duration: .7 }, .05)
+      .fromTo('.hero__eyebrow',
+        { y: 18, opacity: 0 },
+        { y: 0, opacity: 1, duration: .6 }, .1)
+      .fromTo('.hero__title .line > span',
+        { yPercent: 110, opacity: 0 },
+        { yPercent: 0, opacity: 1, duration: .85, stagger: .07 }, .15)
+      .fromTo('.hero__sub .word i',
+        { yPercent: 110, opacity: 0 },
+        { yPercent: 0, opacity: 1, duration: .6, stagger: .01 }, .45)
+      .fromTo('.hero .btn',
+        { y: 20, opacity: 0 },
+        { y: 0, opacity: 1, duration: .6 }, .6)
+      .fromTo('.hero__scroll',
+        { opacity: 0 },
+        { opacity: 1, duration: .5 }, .75);
   }
 
   function scrollAnims() {
