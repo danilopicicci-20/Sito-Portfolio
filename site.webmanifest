@@ -1,0 +1,14 @@
+{
+  "name": "Fluids Studio",
+  "short_name": "Fluids",
+  "description": "Design e sviluppo di siti web su misura, animazioni fluide e 3D interattivo.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#07070a",
+  "theme_color": "#07070a",
+  "icons": [
+    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "favicon.svg", "sizes": "any", "type": "image/svg+xml" }
+  ]
+}
