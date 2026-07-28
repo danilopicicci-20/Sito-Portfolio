@@ -358,10 +358,15 @@
     });
 
     // studio items
-    gsap.from('.studio__item', {
-      scrollTrigger: { trigger: '.studio__grid', start: 'top 82%' },
-      y: 40, opacity: 0, duration: 1, ease: 'expo.out', stagger: .1
-    });
+    // fromTo() con stato finale esplicito: evita che un refresh di ScrollTrigger
+    // ri-registri come "arrivo" un'opacità 0 lasciata da un altro tween.
+    gsap.fromTo('.studio__item',
+      { y: 40, opacity: 0 },
+      {
+        scrollTrigger: { trigger: '.studio__grid', start: 'top 82%' },
+        y: 0, opacity: 1, duration: 1, ease: 'expo.out', stagger: .1,
+        overwrite: 'auto'
+      });
 
     // lavori: i riquadri sbucano dal lato dello schermo, in sincrono con lo scroll
     gsap.utils.toArray('.work').forEach(w => {
