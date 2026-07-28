@@ -93,16 +93,20 @@
           </defs>
 
           <!-- anello: resta stabile e preciso -->
-          <circle cx="120" cy="120" r="98" fill="none" stroke="rgba(244,242,238,.26)" stroke-width="1"/>
+          <circle cx="120" cy="120" r="98" fill="none" stroke="rgba(244,242,238,.4)" stroke-width="2"/>
 
           <!-- l'acqua dentro l'anello: distorta e in flusso continuo -->
           <g filter="url(#liquidFilter)">
+            <!-- scia di fondo: rende leggibile il percorso anche dove il
+                 tratto animato in quel momento non c'è -->
+            <path d="M64 134 C 82 98, 100 98, 120 120 C 140 142, 158 142, 176 106"
+                  fill="none" stroke="url(#gRingHero)" stroke-width="9" stroke-linecap="round" opacity=".22"/>
             <path class="brandmark__wave" pathLength="1"
                   d="M64 134 C 82 98, 100 98, 120 120 C 140 142, 158 142, 176 106"
-                  fill="none" stroke="url(#gRingHero)" stroke-width="6.5" stroke-linecap="round"/>
+                  fill="none" stroke="url(#gRingHero)" stroke-width="9" stroke-linecap="round"/>
             <path d="M70 150 C 86 122, 102 122, 120 140 C 138 158, 154 158, 170 130"
-                  fill="none" stroke="url(#gRingHero)" stroke-width="2.5" stroke-linecap="round" opacity=".28"/>
-            <circle cx="176" cy="106" r="4.2" fill="url(#gRingHero)"/>
+                  fill="none" stroke="url(#gRingHero)" stroke-width="3.5" stroke-linecap="round" opacity=".4"/>
+            <circle cx="176" cy="106" r="5.5" fill="url(#gRingHero)"/>
           </g>
         </svg>
         <div class="brandmark__word">

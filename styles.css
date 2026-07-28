@@ -215,17 +215,23 @@ main, .nav, .footer{ position:relative; z-index:2; }
   margin-bottom:clamp(20px,3vw,32px);
   opacity:0; /* rivelato da GSAP nell'intro */
 }
-.brandmark__icon{ width:clamp(56px,7vw,72px); height:clamp(56px,7vw,72px); flex:none; overflow:visible; }
+.brandmark__icon{
+  width:clamp(66px,8.4vw,86px); height:clamp(66px,8.4vw,86px);
+  flex:none; overflow:visible;
+  /* alone luminoso: stacca l'onda dal fondo scuro e la rende molto più visibile */
+  filter:drop-shadow(0 0 10px rgba(124,92,255,.55)) drop-shadow(0 0 22px rgba(0,226,184,.28));
+}
 .brandmark__wave{
-  stroke-dasharray:.22 1;
-  animation:brandflow 2.6s linear infinite;
+  /* tratto più lungo e visibile, che scorre più velocemente */
+  stroke-dasharray:.34 .66;
+  animation:brandflow 2s linear infinite;
 }
 @keyframes brandflow{ to{ stroke-dashoffset:-1; } }
 /* logotipo lineare: maiuscolo leggero e spaziato, come una maison.
    Il peso 300 e la tracciatura ampia danno l'aria "lusso minimal";
    il contrasto di colore separa le due parole senza bisogno di simboli. */
 .brandmark__word{
-  display:flex; align-items:baseline; gap:.62em;
+  display:flex; flex-direction:column; align-items:flex-start; gap:.42em;
   line-height:1;
   font-size:clamp(15px,1.9vw,22px);
   text-transform:uppercase;
@@ -234,13 +240,13 @@ main, .nav, .footer{ position:relative; z-index:2; }
 .brandmark__studio{
   font-family:var(--sans);
   font-weight:300;
-  letter-spacing:.34em;
   /* compensa lo spazio che la tracciatura aggiunge dopo l'ultima lettera */
   margin-right:-.34em;
-  font-size:1em;
 }
-.brandmark__fluid{ color:var(--ink); }
-.brandmark__studio{ color:var(--ink-dim); }
+.brandmark__fluid{ color:var(--ink); letter-spacing:.34em; font-size:1em; }
+/* "STUDIO" più piccolo ma con tracciatura maggiore: così le due righe
+   risultano otticamente della stessa larghezza, come nei loghi di maison */
+.brandmark__studio{ color:var(--ink-dim); letter-spacing:.82em; font-size:.66em; }
 .hero__title{
   font-size:clamp(44px, 9.2vw, 152px);
   line-height:.95; letter-spacing:-.045em; font-weight:400;
@@ -623,11 +629,11 @@ main, .nav, .footer{ position:relative; z-index:2; }
 
   .hero{ padding:96px var(--pad) 32px; }
   .brandmark{ gap:11px; margin-bottom:16px; }
-  .brandmark__icon{ width:44px; height:44px; }
+  .brandmark__icon{ width:54px; height:54px; }
   /* su schermo stretto riduco un filo la tracciatura, altrimenti va a capo */
-  .brandmark__word{ font-size:13px; gap:.5em; }
-  .brandmark__fluid,
-  .brandmark__studio{ letter-spacing:.26em; margin-right:-.26em; }
+  .brandmark__word{ font-size:14px; gap:.38em; }
+  .brandmark__fluid{ letter-spacing:.28em; margin-right:-.28em; }
+  .brandmark__studio{ letter-spacing:.5em; margin-right:-.5em; }
   .hero__title{ font-size:clamp(32px,11vw,52px); margin-bottom:22px; }
   .hero__sub{ font-size:14px; }
   .btn{ font-size:13px; padding:12px 22px; }
