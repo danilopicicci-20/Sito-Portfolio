@@ -87,7 +87,8 @@ em{ font-family:var(--serif); font-style:italic; font-weight:400; }
    normalizzati (0 = pieno, 1 = vuoto) invece della circonferenza reale */
 .loader__ring{ stroke-dasharray:1; stroke-dashoffset:1; }
 #loaderWave, #loaderWave2{ stroke-dasharray:1; stroke-dashoffset:1; }
-#loaderDrop{ opacity:0; }
+#loaderDropPos{ opacity:0; }
+#loaderPing{ opacity:0; }
 
 /* wordmark che si riempie di liquido */
 .loader__word{
@@ -104,9 +105,8 @@ em{ font-family:var(--serif); font-style:italic; font-weight:400; }
 
 /* niente coreografia se l'utente ha chiesto meno movimento */
 @media (prefers-reduced-motion:reduce){
-  #loaderRingBg, .loader__word{ opacity:1; }
+  #loaderRingBg, .loader__word, #loaderDropPos{ opacity:1; }
   .loader__ring, #loaderWave, #loaderWave2{ stroke-dashoffset:0; }
-  #loaderDrop{ opacity:1; }
 }
 
 /* =============== CURSOR =============== */

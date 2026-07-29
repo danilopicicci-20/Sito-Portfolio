@@ -37,19 +37,39 @@
           <stop offset="0%" stop-color="#8f7bff"/>
           <stop offset="100%" stop-color="#00e2b8"/>
         </linearGradient>
+        <!-- stesso gradiente, ma ancorato al viewBox invece che al singolo
+             elemento: così la goccia assume il colore che l'onda ha nel punto
+             esatto in cui si trova mentre la percorre -->
+        <linearGradient id="gLoaderUS" gradientUnits="userSpaceOnUse" x1="24" y1="0" x2="216" y2="240">
+          <stop offset="0%" stop-color="#8f7bff"/>
+          <stop offset="100%" stop-color="#00e2b8"/>
+        </linearGradient>
       </defs>
 
-      <!-- Fase 1 — anello e onda si disegnano -->
+      <!-- Fase 1 — un puntino nasce, corre, e la linea esce da lui -->
       <circle id="loaderRingBg" cx="120" cy="120" r="98" fill="none"
               stroke="rgba(244,242,238,.12)" stroke-width="2"/>
-      <circle id="loaderRing" class="loader__ring" cx="120" cy="120" r="98" pathLength="1"
-              fill="none" stroke="url(#gRingLoader)" stroke-width="2.5" stroke-linecap="round"/>
+      <!-- anello come <path>: getPointAtLength su <circle> è SVG2 e non è
+           supportato ovunque, su <path> lo è da sempre -->
+      <path id="loaderRing" class="loader__ring" pathLength="1"
+            d="M120 22 A98 98 0 0 1 120 218 A98 98 0 0 1 120 22"
+            fill="none" stroke="url(#gRingLoader)" stroke-width="2.5" stroke-linecap="round"/>
       <path id="loaderWave" d="M64 134 C 82 98, 100 98, 120 120 C 140 142, 158 142, 176 106" pathLength="1"
             fill="none" stroke="url(#gRingLoader)" stroke-width="6.5" stroke-linecap="round"/>
       <path id="loaderWave2" d="M70 150 C 86 122, 102 122, 120 140 C 138 158, 154 158, 170 130" pathLength="1"
             fill="none" stroke="url(#gRingLoader)" stroke-width="2.5" stroke-linecap="round" opacity=".28"/>
-      <!-- la goccia non "compare": cavalca l'onda mentre viene disegnata -->
-      <circle id="loaderDrop" cx="64" cy="134" r="5" fill="url(#gRingLoader)"/>
+
+      <!-- La goccia che disegna. Tre livelli annidati perché tre cose diverse
+           scrivono su transform e non devono litigare:
+             Pos → posizione lungo il tracciato (JS, ogni frame)
+             Pop → nascita e impatto (GSAP)
+             Drop → stiramento nella direzione di marcia (JS, ogni frame) -->
+      <g id="loaderDropPos">
+        <circle id="loaderPing" r="6" fill="none" stroke="url(#gLoaderUS)" stroke-width="2"/>
+        <g id="loaderDropPop">
+          <ellipse id="loaderDrop" rx="5.4" ry="5.4" fill="url(#gLoaderUS)"/>
+        </g>
+      </g>
     </svg>
 
     <!-- Fase 2 — il wordmark si riempie di liquido: due copie dello stesso

@@ -251,8 +251,8 @@
      3. PRELOADER
      ==================================================
      Tre fasi, tutte sullo stesso tema "fluido":
-       1. anello e onda si disegnano, con una goccia che cavalca l'onda
-          mentre viene tracciata (getPointAtLength, non un plugin)
+       1. nasce un puntino e la linea del logo ESCE da lui mentre corre
+          (getPointAtLength, nessun plugin); poi l'anello si chiude
        2. il wordmark si riempie di liquido attraverso una mask SVG
        3. la tenda risale con un bordo ondulato
      Le due superfici liquide (2 e 3) non sono keyframe: il path viene
@@ -308,8 +308,26 @@
     const fillEl  = document.getElementById('loaderFill');
     const curtEl  = document.getElementById('loaderCurtain');
     const waveEl  = document.getElementById('loaderWave');
+    const dropPos = document.getElementById('loaderDropPos');
+    const dropPop = document.getElementById('loaderDropPop');
     const dropEl  = document.getElementById('loaderDrop');
+    const pingEl  = document.getElementById('loaderPing');
     const waveLen = waveEl.getTotalLength();
+
+    /* Piazza la goccia al punto `u` (0..1) del tracciato, orientata e stirata
+       nella direzione di marcia: più corre, più si allunga e si assottiglia.
+       È lo stesso principio del cursore liquido del sito. */
+    let lastU = 0, lastT = 0;
+    function placeDrop(u, stretch) {
+      const L = u * waveLen;
+      const a = waveEl.getPointAtLength(L);
+      const b = waveEl.getPointAtLength(Math.min(waveLen, L + 1.5));
+      const ang = Math.atan2(b.y - a.y, b.x - a.x) * 180 / Math.PI;
+      dropPos.setAttribute('transform', `translate(${a.x.toFixed(2)} ${a.y.toFixed(2)})`);
+      dropEl.setAttribute('transform',
+        `rotate(${ang.toFixed(1)}) scale(${(1 + stretch * .85).toFixed(3)} ${(1 - stretch * .34).toFixed(3)})`);
+    }
+    placeDrop(0, 0);
 
     // stato letto dal ticker: GSAP interpola i numeri, il ticker ridisegna
     const liq = { level: 0 };
@@ -332,50 +350,69 @@
       onComplete: () => { gsap.ticker.remove(paint); hide(); }
     });
 
-    /* --- FASE 1 · anello e onda si disegnano --- */
-    tl.to('#loaderRingBg', { opacity: 1, duration: .5 }, 0)
-      .fromTo('#loaderRing',
-        { strokeDashoffset: 1 },
-        { strokeDashoffset: 0, duration: 1.15, ease: 'power2.inOut' }, 0)
+    /* --- FASE 1a · il puntino nasce, da solo, sul nulla --- */
+    tl.set(dropPos, { opacity: 1 }, 0)
+      .fromTo(dropPop, { scale: 0 }, { scale: 1, duration: .42, ease: 'back.out(2.8)' }, 0)
+      // increspatura: un anello che si allarga e svanisce, come un tuffo
+      .fromTo(pingEl,
+        { scale: .55, opacity: .85 },
+        { scale: 4.2, opacity: 0, duration: .7, ease: 'power2.out' }, .08)
+
+    /* --- FASE 1b · la linea esce dal puntino ---
+       Il tratto e la corsa condividono start, durata ed easing: il tratto
+       finisce esattamente sotto la goccia, fotogramma per fotogramma. */
       .fromTo('#loaderWave',
         { strokeDashoffset: 1 },
-        { strokeDashoffset: 0, duration: .85, ease: 'power2.out' }, .8)
+        { strokeDashoffset: 0, duration: 1, ease: 'power2.inOut' }, .4)
+      .to({ u: 0 }, {
+        u: 1, duration: 1, ease: 'power2.inOut',
+        onStart() { lastU = 0; lastT = performance.now(); },
+        onUpdate() {
+          const u = this.targets()[0].u, now = performance.now();
+          const dt = Math.max(8, now - lastT) / 1000;
+          const speed = Math.abs(u - lastU) / dt;   // frazione di tracciato al secondo
+          lastU = u; lastT = now;
+          placeDrop(u, Math.min(1, speed / 2.2));
+        },
+        onComplete() { placeDrop(1, 0); }
+      }, .4)
+      // l'eco dell'onda insegue con un po' di ritardo
       .fromTo('#loaderWave2',
         { strokeDashoffset: 1 },
-        { strokeDashoffset: 0, duration: .75, ease: 'power2.out' }, 1)
-      // la goccia percorre il tracciato in sincrono con il tratto che appare:
-      // sembra che sia lei a dipingere l'onda
-      .set(dropEl, { opacity: 1 }, .8)
-      .to({ u: 0 }, {
-        u: 1, duration: .85, ease: 'power2.out',
-        onUpdate() {
-          const pt = waveEl.getPointAtLength(this.targets()[0].u * waveLen);
-          dropEl.setAttribute('cx', pt.x.toFixed(2));
-          dropEl.setAttribute('cy', pt.y.toFixed(2));
-        }
-      }, .8)
-      .fromTo(dropEl, { scale: .4 }, { scale: 1, duration: .4, ease: 'back.out(3)' }, 1.55)
+        { strokeDashoffset: 0, duration: .95, ease: 'power2.inOut' }, .62)
+      // arrivo: la goccia si schiaccia contro il traguardo e manda un'onda
+      .to(dropPop, { scale: 1.45, duration: .16, ease: 'power2.out' }, 1.4)
+      .to(dropPop, { scale: 1, duration: .3, ease: 'power2.inOut' }, 1.56)
+      .fromTo(pingEl,
+        { scale: .55, opacity: .8 },
+        { scale: 4, opacity: 0, duration: .75, ease: 'power2.out' }, 1.4)
+
+    /* --- FASE 1c · l'anello si chiude attorno al segno --- */
+      .fromTo('#loaderRing',
+        { strokeDashoffset: 1 },
+        { strokeDashoffset: 0, duration: 1.05, ease: 'power2.inOut' }, 1.35)
+      .to('#loaderRingBg', { opacity: 1, duration: .5 }, 1.45)
 
     /* --- FASE 2 · il wordmark si riempie --- */
-      .to('.loader__word', { opacity: 1, duration: .5, ease: 'power2.out' }, .9)
-      .to(liq, { level: 1, duration: 1.1, ease: 'power2.inOut' }, 1.1)
+      .to('.loader__word', { opacity: 1, duration: .5, ease: 'power2.out' }, 1.55)
+      .to(liq, { level: 1, duration: 1.1, ease: 'power2.inOut' }, 1.75)
 
     /* --- FASE 3 · respiro e uscita a tenda --- */
-      .to('.loader__mark', { scale: 1.05, duration: .26, ease: 'power2.out' }, 2.25)
-      .to('.loader__mark', { scale: 1, duration: .34, ease: 'power2.inOut' }, 2.51)
+      .to('.loader__mark', { scale: 1.05, duration: .26, ease: 'power2.out' }, 2.9)
+      .to('.loader__mark', { scale: 1, duration: .34, ease: 'power2.inOut' }, 3.16)
       // da qui la copertura è solo il path: senza questo, il fondo pieno del
       // pannello resterebbe visibile sotto la tenda che sale
-      .call(() => { loader.style.background = 'transparent'; }, null, 2.55)
+      .call(() => { loader.style.background = 'transparent'; }, null, 3.2)
       // la hero parte mentre la tenda risale, così si scopre già animata
-      .call(release, null, 2.58)
-      .to('.loader__inner', { y: -80, opacity: 0, duration: .65, ease: 'power2.in' }, 2.55)
-      .to(cur, { p: 1, duration: 1, ease: 'power2.inOut' }, 2.6);
+      .call(release, null, 3.23)
+      .to('.loader__inner', { y: -80, opacity: 0, duration: .65, ease: 'power2.in' }, 3.2)
+      .to(cur, { p: 1, duration: 1, ease: 'power2.inOut' }, 3.25);
 
-    // ~3,6 s a velocità 1: 1,35× lo porta a ~2,7 s.
-    // Chi ha già visto l'intro in questa sessione se la becca in ~1,1 s.
+    // ~4,25 s a velocità 1: 1,5× lo porta a ~2,8 s.
+    // Chi ha già visto l'intro in questa sessione se la becca in ~1,2 s.
     let seen = false;
     try { seen = sessionStorage.getItem('fs_intro') === '1'; sessionStorage.setItem('fs_intro', '1'); } catch (e) {}
-    tl.timeScale(seen ? 3.2 : 1.35);
+    tl.timeScale(seen ? 3.4 : 1.5);
 
     // si parte quando i font sono pronti, ma non si aspetta oltre 700 ms
     let started = false;
