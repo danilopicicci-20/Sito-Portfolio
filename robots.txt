@@ -1,0 +1,6 @@
+# Fluids Studio — tutto indicizzabile.
+# Quando il dominio definitivo è attivo, aggiungere qui:
+#   Sitemap: https://iltuodominio.it/sitemap.xml
+
+User-agent: *
+Allow: /
