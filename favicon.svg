@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 240" width="240" height="240">
+  <defs>
+    <linearGradient id="fg" x1="10%" y1="0%" x2="90%" y2="100%">
+      <stop offset="0%" stop-color="#8f7bff"/>
+      <stop offset="100%" stop-color="#00e2b8"/>
+    </linearGradient>
+  </defs>
+
+  <!-- tessera scura: si stacca sia su tab chiare sia su tab scure -->
+  <rect width="240" height="240" rx="52" fill="#07070a"/>
+
+  <!-- onda: unico segno, ingrossato per restare leggibile a 16px -->
+  <path d="M47.2 138.2 C 70.6 91.4, 94 91.4, 120 120 C 146 148.6, 169.4 148.6, 192.8 101.8"
+        fill="none" stroke="url(#fg)" stroke-width="19" stroke-linecap="round"/>
+
+  <!-- goccia: accento finale -->
+  <circle cx="192.8" cy="101.8" r="12" fill="#00e2b8"/>
+</svg>

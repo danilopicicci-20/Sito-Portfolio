@@ -1,20 +1,41 @@
 <!DOCTYPE html>
 <html lang="it">
 <head>
-<meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
-<title>Fluids Studio — Design & Sviluppo Web con Animazioni 3D</title>
-<meta name="description" content="Fluids Studio: progettazione e sviluppo di siti web su misura, animazioni fluide, 3D interattivo e performance reali. Guarda cosa possiamo costruire per te." />
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
 
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Inter+Tight:wght@300;400;500;600&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="styles.css" />
+  <title>Fluids Studio — Design &amp; Sviluppo Web con Animazioni 3D</title>
+  <meta name="description" content="Fluids Studio: progettazione e sviluppo di siti web su misura, animazioni fluide, 3D interattivo e performance reali. Guarda cosa possiamo costruire per te." />
+
+  <!-- Icone: l'SVG è la sorgente moderna, l'ICO copre i browser vecchi -->
+  <link rel="icon" href="favicon.svg" type="image/svg+xml" />
+  <link rel="icon" href="favicon.ico" sizes="32x32" />
+  <link rel="apple-touch-icon" href="apple-touch-icon.png" />
+  <link rel="manifest" href="site.webmanifest" />
+  <meta name="theme-color" content="#07070a" />
+
+  <!-- I font sono serviti da noi (vedi @font-face in styles.css): nessuna
+       richiesta a Google, quindi nessun preconnect da fare. Il preload
+       anticipa i due tagli che compaiono già nella prima schermata. -->
+  <link rel="preload" as="font" type="font/woff2" crossorigin
+        href="assets/fonts/inter-tight-latin-300-normal.woff2" />
+  <link rel="preload" as="font" type="font/woff2" crossorigin
+        href="assets/fonts/instrument-serif-latin-400-italic.woff2" />
+
+  <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
 
 <!-- ============ PRELOADER ============ -->
 <div class="loader" id="loader">
+
+  <!-- Tenda liquida: è questo path — non un colore di sfondo — a coprire lo
+       schermo. Il suo bordo superiore viene ricostruito frame per frame in JS,
+       così può risalire ondeggiando invece di sfumare via. -->
+  <svg class="loader__curtain" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
+    <path id="loaderCurtain" fill="#07070a" d="M0 100 L100 100 L100 -25 L0 -25 Z"/>
+  </svg>
+
   <div class="loader__inner">
     <svg class="loader__mark" viewBox="0 0 240 240" aria-hidden="true">
       <defs>
@@ -22,20 +43,58 @@
           <stop offset="0%" stop-color="#8f7bff"/>
           <stop offset="100%" stop-color="#00e2b8"/>
         </linearGradient>
+        <!-- stesso gradiente, ma ancorato al viewBox invece che al singolo
+             elemento: così la goccia assume il colore che l'onda ha nel punto
+             esatto in cui si trova mentre la percorre -->
+        <linearGradient id="gLoaderUS" gradientUnits="userSpaceOnUse" x1="24" y1="0" x2="216" y2="240">
+          <stop offset="0%" stop-color="#8f7bff"/>
+          <stop offset="100%" stop-color="#00e2b8"/>
+        </linearGradient>
       </defs>
-      <!-- anello di sfondo -->
-      <circle cx="120" cy="120" r="98" fill="none" stroke="rgba(244,242,238,.14)" stroke-width="2"/>
-      <!-- anello di avanzamento: si disegna da solo al posto della barra -->
-      <circle id="loaderRing" class="loader__ring" cx="120" cy="120" r="98" pathLength="1"
-              fill="none" stroke="url(#gRingLoader)" stroke-width="2.5" stroke-linecap="round"/>
-      <!-- onda: emerge man mano che il caricamento procede -->
+
+      <!-- Fase 1 — un puntino nasce, corre, e la linea esce da lui -->
+      <circle id="loaderRingBg" cx="120" cy="120" r="98" fill="none"
+              stroke="rgba(244,242,238,.12)" stroke-width="2"/>
+      <!-- anello come <path>: getPointAtLength su <circle> è SVG2 e non è
+           supportato ovunque, su <path> lo è da sempre -->
+      <path id="loaderRing" class="loader__ring" pathLength="1"
+            d="M120 22 A98 98 0 0 1 120 218 A98 98 0 0 1 120 22"
+            fill="none" stroke="url(#gRingLoader)" stroke-width="2.5" stroke-linecap="round"/>
       <path id="loaderWave" d="M64 134 C 82 98, 100 98, 120 120 C 140 142, 158 142, 176 106" pathLength="1"
             fill="none" stroke="url(#gRingLoader)" stroke-width="6.5" stroke-linecap="round"/>
       <path id="loaderWave2" d="M70 150 C 86 122, 102 122, 120 140 C 138 158, 154 158, 170 130" pathLength="1"
             fill="none" stroke="url(#gRingLoader)" stroke-width="2.5" stroke-linecap="round" opacity=".28"/>
-      <circle id="loaderDrop" cx="176" cy="106" r="4.2" fill="url(#gRingLoader)"/>
+
+      <!-- La goccia che disegna. Tre livelli annidati perché tre cose diverse
+           scrivono su transform e non devono litigare:
+             Pos → posizione lungo il tracciato (JS, ogni frame)
+             Pop → nascita e impatto (GSAP)
+             Drop → stiramento nella direzione di marcia (JS, ogni frame) -->
+      <g id="loaderDropPos">
+        <circle id="loaderPing" r="6" fill="none" stroke="url(#gLoaderUS)" stroke-width="2"/>
+        <g id="loaderDropPop">
+          <ellipse id="loaderDrop" rx="5.4" ry="5.4" fill="url(#gLoaderUS)"/>
+        </g>
+      </g>
     </svg>
-    <div class="loader__label">Fluids Studio</div>
+
+    <!-- Fase 2 — il wordmark si riempie di liquido: due copie dello stesso
+         testo, la seconda ritagliata da una mask la cui superficie ondeggia. -->
+    <svg class="loader__word" viewBox="0 0 420 40" aria-hidden="true">
+      <defs>
+        <linearGradient id="gWord" x1="0%" y1="0%" x2="100%" y2="0%">
+          <stop offset="0%" stop-color="#8f7bff"/>
+          <stop offset="55%" stop-color="#7c5cff"/>
+          <stop offset="100%" stop-color="#00e2b8"/>
+        </linearGradient>
+        <text id="loaderWordText" x="206" y="27" text-anchor="middle">FLUIDS STUDIO</text>
+        <mask id="mWord" maskUnits="userSpaceOnUse" x="0" y="-12" width="420" height="64">
+          <path id="loaderFill" fill="#fff" d="M0 44 L420 44 L420 48 L0 48 Z"/>
+        </mask>
+      </defs>
+      <use href="#loaderWordText" class="lw lw--ghost"/>
+      <use href="#loaderWordText" class="lw lw--fill" mask="url(#mWord)"/>
+    </svg>
   </div>
 </div>
 
@@ -151,15 +210,15 @@
       La maggior parte dei siti si dimentica in tre secondi. Io lavoro sull'opposto: ogni scroll, ogni transizione, ogni dettaglio è pensato per tenere una persona incollata allo schermo — e portarla dove serve a te. Design e codice non sono due fasi separate, sono la stessa cosa.
     </p>
     <div class="studio__grid">
-      <div class="studio__item reveal-up">
+      <div class="studio__item">
         <h3>Su misura, mai template</h3>
         <p>Ogni progetto parte da zero sul tuo brand. Nessun tema preconfezionato, nessun sito uguale a mille altri.</p>
       </div>
-      <div class="studio__item reveal-up">
+      <div class="studio__item">
         <h3>Il movimento ha uno scopo</h3>
         <p>Le animazioni guidano l'occhio e raccontano. Mai effetti gratuiti che rallentano l'esperienza.</p>
       </div>
-      <div class="studio__item reveal-up">
+      <div class="studio__item">
         <h3>Veloce ovunque</h3>
         <p>Codice leggero e ottimizzato: caricamenti rapidi, perfetto su mobile, pronto per Google.</p>
       </div>
@@ -456,9 +515,14 @@
   <a href="#top" data-hover>Torna su ↑</a>
 </footer>
 
-<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/ScrollTrigger.min.js"></script>
-<script src="main.js"></script>
+<!-- Librerie servite dal nostro dominio (vendor/), non da una CDN pubblica:
+     se la CDN venisse compromessa, quel codice girerebbe qui con pieni
+     poteri sulla pagina. Così la CSP può restare a script-src 'self'.
+     Versioni: Three.js r128 (MIT) · GSAP 3.12.5 + ScrollTrigger (licenza
+     standard GreenSock, gratuita per siti come questo). -->
+<script src="vendor/three.min.js" defer></script>
+<script src="vendor/gsap.min.js" defer></script>
+<script src="vendor/ScrollTrigger.min.js" defer></script>
+<script src="main.js" defer></script>
 </body>
 </html>
