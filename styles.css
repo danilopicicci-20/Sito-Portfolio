@@ -713,7 +713,6 @@ main, .nav, .footer{ position:relative; z-index:2; }
   font-size:13.5px; color:var(--ink-dim);
 }
 .footer a:hover{ color:var(--ink); }
-@media (max-width:600px){ .footer__mid{ display:none; } }
 
 /* =============== SCHERMI PICCOLI (telefoni) =============== */
 /* Tutto qui sotto vale solo sotto i 480px: non tocca la vista desktop/tablet.
