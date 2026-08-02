@@ -1,6 +1,11 @@
 # Fluids Studio — tutto indicizzabile.
-# Quando il dominio definitivo è attivo, aggiungere qui:
-#   Sitemap: https://iltuodominio.it/sitemap.xml
 
 User-agent: *
 Allow: /
+
+# Le librerie e i font non hanno motivo di finire nell'indice, ma NON vanno
+# bloccati: Google ha bisogno di eseguire GSAP per vedere la pagina come la
+# vede un utente. Un Disallow su /vendor/ farebbe apparire il sito rotto al
+# crawler e questo sì che farebbe danni.
+
+Sitemap: https://fluidsstudio.it/sitemap.xml

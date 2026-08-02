@@ -4,8 +4,43 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
 
-  <title>Fluids Studio — Design &amp; Sviluppo Web con Animazioni 3D</title>
-  <meta name="description" content="Fluids Studio: progettazione e sviluppo di siti web su misura, animazioni fluide, 3D interattivo e performance reali. Guarda cosa possiamo costruire per te." />
+  <!-- =====================================================================
+       SEO — la keyword prima del brand.
+       Chi cerca "Fluids Studio" ci trova comunque (il brand è nel title, nell'H1,
+       nel dominio e nello schema); chi cerca "creazione siti web" vede invece
+       subito la promessa. Title sotto i ~60 caratteri e description sotto i
+       ~160: oltre, Google tronca e la frase perde il finale.
+       ===================================================================== -->
+  <title>Creazione Siti Web su Misura e Animati | Fluids Studio</title>
+  <meta name="description" content="Siti web su misura per professionisti e piccole imprese in tutta Italia: animazioni fluide, 3D interattivo, performance e SEO tecnica. Primo confronto gratuito." />
+  <meta name="author" content="Danilo Picicci" />
+
+  <!-- Una sola versione dell'URL è quella buona: senza canonical, dominio con
+       e senza www, con e senza slash finale diventano pagine diverse che si
+       rubano il posizionamento a vicenda. -->
+  <link rel="canonical" href="https://fluidsstudio.it/" />
+
+  <!-- max-image-preview:large abilita l'anteprima grande nei risultati:
+       a parità di posizione fa una differenza netta sui clic. -->
+  <meta name="robots" content="index, follow, max-snippet:-1, max-image-preview:large, max-video-preview:-1" />
+
+  <!-- Anteprima su WhatsApp, LinkedIn, Facebook, Telegram. Senza questi tag
+       il link condiviso appare come testo nudo e viene aperto molto meno. -->
+  <meta property="og:type" content="website" />
+  <meta property="og:site_name" content="Fluids Studio" />
+  <meta property="og:locale" content="it_IT" />
+  <meta property="og:url" content="https://fluidsstudio.it/" />
+  <meta property="og:title" content="Creazione Siti Web su Misura e Animati | Fluids Studio" />
+  <meta property="og:description" content="Siti web su misura per professionisti e piccole imprese in tutta Italia: animazioni fluide, 3D interattivo, performance reali e SEO tecnica." />
+  <meta property="og:image" content="https://fluidsstudio.it/og-image.png" />
+  <meta property="og:image:width" content="1200" />
+  <meta property="og:image:height" content="630" />
+  <meta property="og:image:alt" content="Fluids Studio — creazione siti web su misura" />
+
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" content="Creazione Siti Web su Misura e Animati | Fluids Studio" />
+  <meta name="twitter:description" content="Siti web su misura per professionisti e piccole imprese in tutta Italia: animazioni fluide, 3D interattivo, performance reali e SEO tecnica." />
+  <meta name="twitter:image" content="https://fluidsstudio.it/og-image.png" />
 
   <!-- Icone: l'SVG è la sorgente moderna, l'ICO copre i browser vecchi -->
   <link rel="icon" href="favicon.svg" type="image/svg+xml" />
@@ -23,6 +58,188 @@
         href="assets/fonts/instrument-serif-latin-400-italic.woff2" />
 
   <link rel="stylesheet" href="styles.css" />
+
+  <!-- =====================================================================
+       Dati strutturati (schema.org / JSON-LD)
+       Non servono a "salire di posizione" direttamente: servono a far capire
+       a Google CHE COSA è questa pagina e CHI c'è dietro. È il modo con cui
+       si costruisce l'entità "Fluids Studio" nel Knowledge Graph — decisivo
+       qui, perché esistono già diversi "Fluid Studio" nel mondo e Google deve
+       imparare a tenerli separati.
+
+       Nota tecnica: type="application/ld+json" è un blocco dati, non uno
+       script eseguibile, quindi la CSP con script-src 'self' non lo blocca.
+       ===================================================================== -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@graph": [
+      {
+        "@type": "Organization",
+        "@id": "https://fluidsstudio.it/#organization",
+        "name": "Fluids Studio",
+        "legalName": "Fluids Studio di Danilo Picicci",
+        "url": "https://fluidsstudio.it/",
+        "email": "info@fluidsstudio.it",
+        "description": "Studio di design e sviluppo web che realizza siti su misura, con animazioni fluide, 3D interattivo e attenzione alle performance. Lavora da remoto con clienti in tutta Italia.",
+        "logo": {
+          "@type": "ImageObject",
+          "@id": "https://fluidsstudio.it/#logo",
+          "url": "https://fluidsstudio.it/icon-512.png",
+          "width": 512,
+          "height": 512,
+          "caption": "Fluids Studio"
+        },
+        "image": { "@id": "https://fluidsstudio.it/#logo" },
+        "founder": { "@id": "https://fluidsstudio.it/#danilo" },
+        "areaServed": { "@type": "Country", "name": "Italia" },
+        "knowsAbout": [
+          "Creazione siti web",
+          "Sviluppo web front-end",
+          "Animazioni web GSAP",
+          "Grafica 3D interattiva WebGL",
+          "Landing page",
+          "Ottimizzazione delle performance web",
+          "SEO tecnica"
+        ]
+      },
+      {
+        "@type": "Person",
+        "@id": "https://fluidsstudio.it/#danilo",
+        "name": "Danilo Picicci",
+        "jobTitle": "Web designer e sviluppatore front-end",
+        "email": "info@fluidsstudio.it",
+        "url": "https://fluidsstudio.it/",
+        "worksFor": { "@id": "https://fluidsstudio.it/#organization" }
+      },
+      {
+        "@type": "WebSite",
+        "@id": "https://fluidsstudio.it/#website",
+        "url": "https://fluidsstudio.it/",
+        "name": "Fluids Studio",
+        "inLanguage": "it-IT",
+        "publisher": { "@id": "https://fluidsstudio.it/#organization" }
+      },
+      {
+        "@type": "WebPage",
+        "@id": "https://fluidsstudio.it/#webpage",
+        "url": "https://fluidsstudio.it/",
+        "name": "Creazione Siti Web su Misura e Animati | Fluids Studio",
+        "description": "Siti web su misura per professionisti e piccole imprese in tutta Italia: animazioni fluide, 3D interattivo, performance reali e SEO tecnica.",
+        "isPartOf": { "@id": "https://fluidsstudio.it/#website" },
+        "about": { "@id": "https://fluidsstudio.it/#organization" },
+        "inLanguage": "it-IT",
+        "primaryImageOfPage": { "@id": "https://fluidsstudio.it/#logo" }
+      },
+      {
+        "@type": "Service",
+        "@id": "https://fluidsstudio.it/#servizio",
+        "name": "Creazione di siti web su misura",
+        "serviceType": "Progettazione e sviluppo di siti web",
+        "provider": { "@id": "https://fluidsstudio.it/#organization" },
+        "areaServed": { "@type": "Country", "name": "Italia" },
+        "audience": {
+          "@type": "Audience",
+          "audienceType": "Professionisti, liberi professionisti e piccole imprese"
+        },
+        "hasOfferCatalog": {
+          "@type": "OfferCatalog",
+          "name": "Servizi Fluids Studio",
+          "itemListElement": [
+            {
+              "@type": "Offer",
+              "itemOffered": {
+                "@type": "Service",
+                "name": "Siti vetrina e portfolio",
+                "description": "La presenza online di un professionista o di un piccolo studio: struttura pensata per far arrivare il messaggio giusto in pochi secondi."
+              }
+            },
+            {
+              "@type": "Offer",
+              "itemOffered": {
+                "@type": "Service",
+                "name": "Landing page che convertono",
+                "description": "Una pagina, un obiettivo. Copy, gerarchia visiva e call to action costruite per trasformare i visitatori in contatti reali."
+              }
+            },
+            {
+              "@type": "Offer",
+              "itemOffered": {
+                "@type": "Service",
+                "name": "Animazioni e 3D interattivo",
+                "description": "GSAP, ScrollTrigger e Three.js per esperienze che si distinguono, senza rallentare il sito."
+              }
+            },
+            {
+              "@type": "Offer",
+              "itemOffered": {
+                "@type": "Service",
+                "name": "Performance e SEO tecnica",
+                "description": "Ottimizzazione di velocità, struttura semantica e dati strutturati per i motori di ricerca."
+              }
+            }
+          ]
+        }
+      },
+      {
+        "@type": "FAQPage",
+        "@id": "https://fluidsstudio.it/#faq",
+        "isPartOf": { "@id": "https://fluidsstudio.it/#webpage" },
+        "inLanguage": "it-IT",
+        "mainEntity": [
+          {
+            "@type": "Question",
+            "name": "Quanto costa un sito web su misura?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "Non esiste un listino, perché non esistono due progetti uguali: il prezzo dipende da quante sezioni servono, da quanto lavoro di design e animazione richiede il sito e dalle funzionalità collegate. Dopo un primo confronto gratuito ricevi un preventivo scritto con una cifra fissa, concordata prima di iniziare."
+            }
+          },
+          {
+            "@type": "Question",
+            "name": "Quanto tempo serve per realizzare un sito web?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "In media tre settimane, dal via libera sulla grafica alla messa online. I tempi dipendono soprattutto dalla velocità con cui arrivano testi, foto e materiali: quando il contenuto è pronto, lo sviluppo procede senza attese."
+            }
+          },
+          {
+            "@type": "Question",
+            "name": "Che differenza c'è tra un sito su misura e un template WordPress o Wix?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "Un template è una struttura già decisa da qualcun altro, dentro la quale il tuo contenuto va adattato. Qui succede il contrario: la struttura nasce dai tuoi obiettivi. In più il codice è scritto a mano, quindi il sito carica più in fretta e non si porta dietro plugin e funzioni che non userai mai."
+            }
+          },
+          {
+            "@type": "Question",
+            "name": "Il sito funziona bene anche da telefono?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "Sì, animazioni comprese. Ogni progetto viene costruito e provato su schermi piccoli prima ancora che su desktop, perché oggi la maggior parte delle visite arriva da smartphone: se lì il sito è lento o scomodo, tutto il resto conta poco."
+            }
+          },
+          {
+            "@type": "Question",
+            "name": "Ti occupi anche di dominio, hosting e messa online?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "Sì, dalla configurazione del dominio alla pubblicazione, fino ad analytics e SEO tecnica. Non ti lascio con una cartella di file da caricare da solo, e resto disponibile per aggiornamenti anche dopo il lancio."
+            }
+          },
+          {
+            "@type": "Question",
+            "name": "Lavori solo nella mia zona o anche a distanza?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "Lavoro da remoto con clienti in tutta Italia. Ci sentiamo in videochiamata quando serve e i materiali passano online: la distanza non ha mai rallentato un progetto."
+            }
+          }
+        ]
+      }
+    ]
+  }
+  </script>
 </head>
 <body>
 
@@ -129,6 +346,7 @@
     <a href="#servizi" data-hover>Servizi</a>
     <a href="#lavori" data-hover>Lavori</a>
     <a href="#processo" data-hover>Processo</a>
+    <a href="#faq" data-hover>FAQ</a>
   </nav>
   <a href="#contatti" class="nav__cta" data-hover>Parliamone</a>
 </header>
@@ -174,8 +392,11 @@
         </div>
       </div>
       <p class="eyebrow hero__eyebrow"><span class="pulse"></span> Disponibile per nuovi progetti — 2026</p>
+      <!-- L'H1 è il segnale on-page più pesante dopo il title. "siti web" per
+           esteso costa una parola e vale molto: "siti" da solo non intercetta
+           nessuna ricerca reale. Il ritmo delle tre righe resta identico. -->
       <h1 class="hero__title">
-        <span class="line">Costruisco siti</span>
+        <span class="line">Costruisco siti web</span>
         <span class="line">che <em>si muovono</em></span>
         <span class="line">e restano impressi.</span>
       </h1>
@@ -200,7 +421,14 @@
   <section class="section studio" id="studio">
     <div class="sec-head">
       <span class="sec-num">01</span>
-      <span class="sec-label">Approccio</span>
+      <!-- Unica sezione senza un <h2> visibile: la struttura dei titoli
+           saltava da h1 a h3 e Google (come i lettori di schermo) legge quel
+           salto come un pezzo mancante. Qui l'etichetta di sezione diventa
+           l'h2, con lo stesso identico aspetto di prima.
+           La coda in .sr-only non è un trucco: è servita a tutti allo stesso
+           modo, chi usa un lettore di schermo la sente, e descrive davvero
+           il contenuto della sezione. -->
+      <h2 class="sec-label">Approccio<span class="sr-only"> — come realizzo un sito web su misura</span></h2>
     </div>
     <p class="manifesto" data-split>
       La maggior parte dei siti si dimentica in tre secondi. Io lavoro sull'opposto: ogni scroll, ogni transizione, ogni dettaglio è pensato per tenere una persona incollata allo schermo — e portarla dove serve a te. Design e codice non sono due fasi separate, sono la stessa cosa.
@@ -297,7 +525,7 @@
                   </div>
                   <div class="ms-hero__txt">
                     <span class="ms-eyebrow">Costiera Amalfitana</span>
-                    <h4>Dove il mare<br>si ferma a dormire</h4>
+                    <div class="fake-h">Dove il mare<br>si ferma a dormire</div>
                     <span class="ms-cta">Verifica disponibilità</span>
                   </div>
                 </div>
@@ -348,7 +576,7 @@
                   </div>
                   <div class="ml-hero__txt">
                     <span class="ml-eyebrow">Nuovo · versione 2.0</span>
-                    <h4>Lancia il tuo prodotto<br>in giorni, non mesi</h4>
+                    <div class="fake-h">Lancia il tuo prodotto<br>in giorni, non mesi</div>
                     <p>La landing page pensata per convertire dal primo secondo di scroll.</p>
                     <span class="ml-cta">Inizia ora — è gratis</span>
                   </div>
@@ -408,7 +636,7 @@
                   <div class="mv-hero__row">
                     <div class="mv-hero__txt">
                       <span class="mv-eyebrow">Fotografa &amp; regista</span>
-                      <h4>Racconto per immagini</h4>
+                      <div class="fake-h">Racconto per immagini</div>
                     </div>
                     <div class="mv-hero__img"></div>
                   </div>
@@ -442,7 +670,7 @@
       </article>
 
     </div>
-    <p class="works__note">Entrambe le anteprime qui sopra sono reali e funzionanti: non sono immagini, ma esattamente la tecnologia che userei sul tuo sito.</p>
+    <p class="works__note">Le tre anteprime qui sopra sono reali e funzionanti: non sono immagini, ma esattamente la tecnologia che userei sul tuo sito.</p>
   </section>
 
   <!-- ============ PROCESSO ============ -->
@@ -492,6 +720,57 @@
     </div>
   </section>
 
+  <!-- ============ DOMANDE FREQUENTI ============
+       Questa sezione è qui per una ragione precisa: "creazione siti web" è una
+       ricerca contesa da agenzie con anni di storia, mentre "quanto costa un
+       sito web su misura" o "quanto tempo ci vuole per fare un sito" sono
+       ricerche lunghe, con meno concorrenza e con dietro qualcuno che sta già
+       valutando di comprare. Sono le uniche query realisticamente aggredibili
+       in tempi brevi, e servono anche a farsi citare dalle risposte AI.
+
+       Il testo è ripetuto identico nel JSON-LD in testa alla pagina: Google
+       pretende che la risposta marcata sia la stessa che l'utente legge.
+       Se modifichi una risposta qui, aggiorna anche lo schema. -->
+  <section class="section faq" id="faq">
+    <div class="sec-head">
+      <span class="sec-num">05</span>
+      <span class="sec-label">Domande frequenti</span>
+    </div>
+    <h2 class="h2" data-split>Le domande che mi fanno sempre</h2>
+
+    <div class="faq__list">
+      <details class="faq__item">
+        <summary data-hover><h3>Quanto costa un sito web su misura?</h3><span class="faq__sign" aria-hidden="true"></span></summary>
+        <p>Non esiste un listino, perché non esistono due progetti uguali: il prezzo dipende da quante sezioni servono, da quanto lavoro di design e animazione richiede il sito e dalle funzionalità collegate. Dopo un primo confronto gratuito ricevi un preventivo scritto con una cifra fissa, concordata prima di iniziare.</p>
+      </details>
+
+      <details class="faq__item">
+        <summary data-hover><h3>Quanto tempo serve per realizzare un sito web?</h3><span class="faq__sign" aria-hidden="true"></span></summary>
+        <p>In media tre settimane, dal via libera sulla grafica alla messa online. I tempi dipendono soprattutto dalla velocità con cui arrivano testi, foto e materiali: quando il contenuto è pronto, lo sviluppo procede senza attese.</p>
+      </details>
+
+      <details class="faq__item">
+        <summary data-hover><h3>Che differenza c'è tra un sito su misura e un template WordPress o Wix?</h3><span class="faq__sign" aria-hidden="true"></span></summary>
+        <p>Un template è una struttura già decisa da qualcun altro, dentro la quale il tuo contenuto va adattato. Qui succede il contrario: la struttura nasce dai tuoi obiettivi. In più il codice è scritto a mano, quindi il sito carica più in fretta e non si porta dietro plugin e funzioni che non userai mai.</p>
+      </details>
+
+      <details class="faq__item">
+        <summary data-hover><h3>Il sito funziona bene anche da telefono?</h3><span class="faq__sign" aria-hidden="true"></span></summary>
+        <p>Sì, animazioni comprese. Ogni progetto viene costruito e provato su schermi piccoli prima ancora che su desktop, perché oggi la maggior parte delle visite arriva da smartphone: se lì il sito è lento o scomodo, tutto il resto conta poco.</p>
+      </details>
+
+      <details class="faq__item">
+        <summary data-hover><h3>Ti occupi anche di dominio, hosting e messa online?</h3><span class="faq__sign" aria-hidden="true"></span></summary>
+        <p>Sì, dalla configurazione del dominio alla pubblicazione, fino ad analytics e SEO tecnica. Non ti lascio con una cartella di file da caricare da solo, e resto disponibile per aggiornamenti anche dopo il lancio.</p>
+      </details>
+
+      <details class="faq__item">
+        <summary data-hover><h3>Lavori solo nella mia zona o anche a distanza?</h3><span class="faq__sign" aria-hidden="true"></span></summary>
+        <p>Lavoro da remoto con clienti in tutta Italia. Ci sentiamo in videochiamata quando serve e i materiali passano online: la distanza non ha mai rallentato un progetto.</p>
+      </details>
+    </div>
+  </section>
+
   <!-- ============ CONTATTI ============ -->
   <section class="section contatti" id="contatti">
     <p class="eyebrow reveal-up"><span class="pulse"></span> Prossimo progetto</p>
@@ -513,9 +792,15 @@
 <!-- Librerie servite dal nostro dominio (vendor/), non da una CDN pubblica:
      se la CDN venisse compromessa, quel codice girerebbe qui con pieni
      poteri sulla pagina. Così la CSP può restare a script-src 'self'.
-     Versioni: Three.js r128 (MIT) · GSAP 3.12.5 + ScrollTrigger (licenza
-     standard GreenSock, gratuita per siti come questo). -->
-<script src="vendor/three.min.js" defer></script>
+     Versioni: GSAP 3.12.5 + ScrollTrigger (licenza standard GreenSock,
+     gratuita per siti come questo) · Three.js r128 (MIT).
+
+     Three.js NON è qui: sono 600 KB, quasi dieci volte GSAP, e servono solo
+     alla nuvola di particelle di sfondo — decorazione pura. Caricarlo insieme
+     agli altri significava far parsare al browser mezzo megabyte di
+     JavaScript prima del primo fotogramma utile, cioè peggiorare LCP e INP
+     (che Google usa come fattori di posizionamento) per uno sfondo.
+     Ora lo carica main.js da solo, a intro finita. Vedi la sezione 9. -->
 <script src="vendor/gsap.min.js" defer></script>
 <script src="vendor/ScrollTrigger.min.js" defer></script>
 <script src="main.js" defer></script>

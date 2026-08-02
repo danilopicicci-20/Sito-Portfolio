@@ -106,3 +106,42 @@
   for = "/vendor/*"
   [headers.values]
     Cache-Control = "public, max-age=2592000"
+
+# ---------------------------------------------------------------------------
+# SEO
+# ---------------------------------------------------------------------------
+# sitemap.xml e robots.txt devono essere serviti col MIME giusto, altrimenti
+# Search Console li rifiuta.
+[[headers]]
+  for = "/sitemap.xml"
+  [headers.values]
+    Content-Type = "application/xml; charset=utf-8"
+    Cache-Control = "public, max-age=3600"
+
+[[headers]]
+  for = "/robots.txt"
+  [headers.values]
+    Content-Type = "text/plain; charset=utf-8"
+    Cache-Control = "public, max-age=3600"
+
+# I domini di anteprima di Netlify (*.netlify.app e le deploy preview) sono
+# copie identiche del sito: se Google le indicizza, si crea contenuto
+# duplicato che compete con fluidsstudio.it. Il <link rel="canonical"> nella
+# pagina risolve già il caso, questo header è la seconda cintura.
+# CONTEXT = "deploy-preview" e "branch-deploy" sono i contesti di Netlify.
+[[headers]]
+  for = "/*"
+  [headers.values]
+    X-Robots-Tag = "index, follow"
+
+[context.deploy-preview]
+  [[context.deploy-preview.headers]]
+    for = "/*"
+    [context.deploy-preview.headers.values]
+      X-Robots-Tag = "noindex, nofollow"
+
+[context.branch-deploy]
+  [[context.branch-deploy.headers]]
+    for = "/*"
+    [context.branch-deploy.headers.values]
+      X-Robots-Tag = "noindex, nofollow"

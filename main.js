@@ -37,10 +37,12 @@
   scrollTo(0, 0);
   addEventListener('pageshow', () => scrollTo(0, 0));
 
-  const hasGSAP  = typeof gsap !== 'undefined';
-  const hasST    = hasGSAP && typeof ScrollTrigger !== 'undefined';
-  const hasTHREE = typeof THREE !== 'undefined';
-  const reduced  = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const hasGSAP = typeof gsap !== 'undefined';
+  const hasST   = hasGSAP && typeof ScrollTrigger !== 'undefined';
+  const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  // Three.js non è nell'HTML: arriva dopo, se e quando serve (sezione 9).
+  const hasTHREE = () => typeof THREE !== 'undefined';
 
   if (hasST) gsap.registerPlugin(ScrollTrigger);
 
@@ -73,7 +75,11 @@
      geometria a ogni frame.
      =========================================================================== */
 
-  const COUNT = 6500;
+  // Su schermo piccolo si scende a meno della metà delle particelle: la
+  // differenza visiva è minima (lo sfondo è sfocato dallo scrim), quella sul
+  // consumo di CPU e batteria no. Google misura i Core Web Vitals soprattutto
+  // da mobile, quindi è lì che conviene essere leggeri.
+  const COUNT = innerWidth < 760 ? 2600 : 6500;
 
   function fibonacciSphere(n, R) {
     const a = new Float32Array(n * 3);
@@ -155,7 +161,7 @@
     return a;
   }
 
-  let renderer, scene, camera, ring, group, geo, uniforms;
+  let renderer, scene, camera, ring, group, geo, uniforms, clock;
   let shapes = [];
   let scrollP = 0;
   let docMax = 1;                       // altezza scrollabile, letta solo al resize
@@ -168,7 +174,7 @@
 
   function initGL() {
     const canvas = document.getElementById('scene');
-    if (!canvas || !hasTHREE) return false;
+    if (!canvas || !hasTHREE()) return false;
 
     // Il contesto WebGL può mancare (driver bloccato, GPU esclusa, contesti
     // esauriti): in quel caso il sito deve semplicemente restare senza sfondo.
@@ -262,6 +268,7 @@
     ring.rotation.x = Math.PI * 0.42;
     group.add(ring);
 
+    clock = new THREE.Clock();
     measureDoc();
     addEventListener('resize', onResize, { passive: true });
     return true;
@@ -275,8 +282,6 @@
     uniforms.uPix.value = Math.min(devicePixelRatio, 2);
     measureDoc();
   }
-
-  const clock = hasTHREE ? new THREE.Clock() : null;
 
   /* Interpola fra le forme. `t` 0..1 copre l'intera sequenza. */
   function morph(t) {
@@ -550,27 +555,34 @@
       .to('.loader__inner', { y: -80, opacity: 0, duration: 0.65, ease: 'power2.in' }, 3.2)
       .to(cur, { p: 1, duration: 1, ease: 'power2.inOut' }, 3.25);
 
-    // ~4,25 s a velocità 1: troppo. 1,5× lo porta a ~2,8 s.
-    // Chi ha già visto l'intro in questa sessione se la becca in ~1,2 s.
-    // sessionStorage può lanciare (Safari in navigazione privata, cookie
-    // bloccati di terze parti in iframe): in quel caso si mostra l'intro piena.
+    // La timeline dura ~4,25 s a velocità 1. Google considera "buono" un
+    // Largest Contentful Paint sotto i 2,5 s, e finché il pannello copre lo
+    // schermo il contenuto vero non è ancora dipinto: l'intro è il collo di
+    // bottiglia dei Core Web Vitals, che sono un fattore di posizionamento.
+    // 3,5× la porta a ~1,2 s — tutta la coreografia resta, semplicemente
+    // scorre più svelta — e lascia margine sotto la soglia.
+    // Chi l'ha già vista in questa sessione se la cava in ~0,7 s.
+    // sessionStorage può lanciare (Safari in navigazione privata, cookie di
+    // terze parti bloccati in iframe): in quel caso si mostra l'intro piena.
     let seen = false;
     try {
       seen = sessionStorage.getItem('fs_intro') === '1';
       sessionStorage.setItem('fs_intro', '1');
     } catch (err) { /* storage non disponibile: nessun problema */ }
-    tl.timeScale(seen ? 3.4 : 1.5);
+    tl.timeScale(seen ? 6 : 3.5);
 
     // Il wordmark è testo SVG: con un font di sistema al posto di Inter Tight
-    // le spaziature sarebbero tutte sbagliate. Si attende document.fonts,
-    // ma non oltre 700 ms — meglio un wordmark imperfetto di un sito fermo.
+    // le spaziature sarebbero tutte sbagliate. Si attende document.fonts, ma
+    // non oltre 400 ms — i woff2 sono sul nostro dominio e in <link preload>,
+    // quindi di norma sono pronti molto prima, e ogni millisecondo di attesa
+    // qui è un millisecondo aggiunto all'LCP.
     let started = false;
     const start = () => {
       if (started) return;
       started = true;
       tl.play();
     };
-    setTimeout(start, 700);
+    setTimeout(start, 400);
     if (document.fonts && document.fonts.ready) document.fonts.ready.then(start);
     else start();
   }
@@ -845,7 +857,56 @@
   }
 
   /* ===========================================================================
-     9. BOOT
+     9. CARICAMENTO DIFFERITO DELLO SFONDO 3D
+     ===========================================================================
+     three.min.js pesa ~600 KB: più di tutto il resto del sito messo insieme.
+     Serve solo alla nuvola di particelle, che è decorazione. Tenerlo nell'HTML
+     significava farlo scaricare e parsare prima del primo fotogramma utile,
+     rubando tempo esattamente alle due metriche che Google usa per il
+     posizionamento: LCP (quanto ci mette a comparire il contenuto) e INP
+     (quanto è reattiva la pagina al primo tocco).
+
+     Qui invece parte a intro finita e a browser scarico. Se non arriva —
+     rete lenta, file mancante, risparmio dati attivo — il sito resta
+     esattamente com'è, solo senza sfondo animato.
+     =========================================================================== */
+
+  /* Inserisce uno <script> dal nostro dominio.
+     `src` è sempre una costante scritta qui dentro: nessun valore proveniente
+     dall'esterno finisce mai in un tag script — e comunque la CSP consente
+     solo script-src 'self'. */
+  function loadScript(src) {
+    return new Promise((resolve, reject) => {
+      const s = document.createElement('script');
+      s.src = src;
+      s.async = true;
+      s.onload = () => resolve();
+      s.onerror = () => reject(new Error(`caricamento fallito: ${src}`));
+      document.head.appendChild(s);
+    });
+  }
+
+  function loadBackground() {
+    if (reduced) return;
+
+    // Rispetta chi ha attivato il risparmio dati e chi ha poca memoria:
+    // scaricare mezzo megabyte per un fondale sarebbe sgarbato.
+    const conn = navigator.connection;
+    if (conn && conn.saveData) return;
+    if (navigator.deviceMemory && navigator.deviceMemory < 4) return;
+
+    const go = () => loadScript('vendor/three.min.js')
+      .then(() => { if (initGL()) renderLoop(); })
+      .catch(() => { /* nessuno sfondo: la pagina funziona identica */ });
+
+    // requestIdleCallback aspetta che il browser non abbia altro da fare;
+    // il timeout garantisce che non venga rimandato all'infinito.
+    if ('requestIdleCallback' in window) requestIdleCallback(go, { timeout: 2500 });
+    else setTimeout(go, 800);
+  }
+
+  /* ===========================================================================
+     10. BOOT
      =========================================================================== */
 
   function boot() {
@@ -864,8 +925,6 @@
     marquee();
     liquidLogo();
 
-    if (!reduced && initGL()) renderLoop();
-
     runLoader(() => {
       heroIn();
       scrollAnims();
@@ -873,6 +932,9 @@
       // copriva la pagina: vanno rifatte ora che il layout è quello vero.
       if (hasST) ScrollTrigger.refresh();
       measureDoc();
+      // Solo adesso lo sfondo 3D: la parte pesante arriva quando il
+      // contenuto è già visibile e l'utente può già leggere.
+      loadBackground();
     });
   }
 

@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Il sito è una pagina sola, quindi la sitemap ha un solo URL: non serve a
+  farsi scoprire (Google ci arriva comunque) ma a dichiarare l'URL canonico
+  e la data di ultima modifica.
+  Aggiorna <lastmod> quando cambi i contenuti in modo sostanziale.
+  Se in futuro aggiungi pagine (un blog, casi studio), vanno elencate qui.
+-->
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <url>
+    <loc>https://fluidsstudio.it/</loc>
+    <lastmod>2026-08-02</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>1.0</priority>
+  </url>
+</urlset>
