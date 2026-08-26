@@ -243,6 +243,34 @@
 </head>
 <body>
 
+<!-- =====================================================================
+     INTRO — il filmato del laptop
+     Non parte da solo: ogni fotogramma è deciso dalla posizione di scroll
+     (main.js, sezione 3b). L'ultimo fotogramma È la hero di questo sito,
+     renderizzata a 1920×1080, quindi il passaggio dal video al DOM vero non
+     è un cambio di scena ma un cambio di supporto: stesso quadro, stesse
+     proporzioni, stessa composizione.
+     Il src viene assegnato da JS — così il telefono non scarica il file
+     desktop — e l'intero blocco sparisce se il video non è utilizzabile.
+     ===================================================================== -->
+<div class="intro" id="intro" aria-hidden="true">
+  <div class="intro__stage" id="introStage">
+    <video class="intro__video" id="introVideo"
+           muted playsinline preload="auto"
+           disablepictureinpicture disableremoteplayback></video>
+    <!-- Fascia alta del quadro. Serve solo sugli schermi che non hanno le
+         proporzioni del filmato: lì la nav del video e quella vera non
+         possono stare nello stesso punto (una è ancorata in alto, la hero è
+         ancorata in basso), e invece di farle saltare l'una sull'altra la
+         prima viene spenta sul nero. Su 16:9 resta a opacità zero. -->
+    <div class="intro__navmask" id="introNavMask"></div>
+  </div>
+  <div class="intro__hint" id="introHint">
+    <span>Scorri per entrare</span>
+    <div class="intro__hintline"><i></i></div>
+  </div>
+</div>
+
 <!-- ============ PRELOADER ============ -->
 <div class="loader" id="loader">
 
@@ -354,7 +382,13 @@
 <main id="top">
 
   <!-- ============ HERO ============ -->
+  <!-- .hero__sticky esiste per l'intro: mentre il filmato scorre, la sezione
+       .hero è alta 100svh + la corsa dell'intro, e questo blocco resta
+       incollato in cima. Così, nell'istante del raccordo, la hero vera è già
+       esattamente al suo posto dietro al video invece di essere scorsa via.
+       Senza intro il comportamento è identico a prima. -->
   <section class="hero">
+   <div class="hero__sticky">
     <div class="hero__inner">
       <div class="brandmark" aria-hidden="true">
         <svg class="brandmark__icon" viewBox="0 0 240 240">
@@ -408,6 +442,7 @@
       <span>Scorri</span>
       <div class="hero__scrollline"><i></i></div>
     </div>
+   </div>
   </section>
 
   <!-- ============ MARQUEE ============ -->

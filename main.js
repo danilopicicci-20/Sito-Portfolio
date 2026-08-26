@@ -44,7 +44,12 @@
   // Three.js non è nell'HTML: arriva dopo, se e quando serve (sezione 9).
   const hasTHREE = () => typeof THREE !== 'undefined';
 
-  if (hasST) gsap.registerPlugin(ScrollTrigger);
+  if (hasST) {
+    gsap.registerPlugin(ScrollTrigger);
+    // Su telefono la comparsa/scomparsa della barra degli indirizzi conta come
+    // resize: senza questo, ogni scroll un po' deciso rimisurerebbe tutto.
+    ScrollTrigger.config({ ignoreMobileResize: true });
+  }
 
   // Elementi che il CSS tiene invisibili in attesa dell'intro. Se l'intro non
   // può partire vanno rimessi a vista, altrimenti restano nascosti per sempre.
@@ -65,6 +70,54 @@
       el.style.transform = 'none';
     });
   }
+
+  // Solo la hero, senza i .reveal-up che devono comparire scorrendo.
+  // Serve quando c'è l'intro: lì la hero non "entra" con la sua animazione,
+  // perché è già entrata dentro al filmato. Deve trovarsi composta e ferma,
+  // identica all'ultimo fotogramma, nell'istante del raccordo.
+  const HERO_COMPOSED = [
+    '.nav',
+    '.brandmark',
+    '.hero__eyebrow',
+    '.hero__title .line > span',
+    '.hero__sub .word i',
+    '.hero__scroll'
+  ].join(', ');
+
+  function composeHero() {
+    document.querySelectorAll(HERO_COMPOSED).forEach(el => {
+      el.style.opacity = '1';
+      el.style.transform = 'none';
+    });
+  }
+
+  /* --- L'intro va decisa adesso, non dopo: aggiungere .has-intro cambia
+         l'altezza della hero, e deve succedere mentre il preloader copre
+         ancora tutto. Se una qualsiasi condizione non è soddisfatta, la
+         classe non viene messa e il sito resta esattamente quello di prima. */
+  const introEl    = document.getElementById('intro');
+  const introVideo = document.getElementById('introVideo');
+  const netInfo    = navigator.connection;
+
+  const introOn = !!(introEl && introVideo) && hasST && !reduced
+                  && !(netInfo && netInfo.saveData)
+                  && !!introVideo.canPlayType('video/mp4; codecs="avc1.4d401f"');
+
+  if (introOn) {
+    document.documentElement.classList.add('has-intro');
+    // Il file scelto qui, e non con più <source>: il telefono non deve
+    // nemmeno iniziare a scaricare la versione da 3,5 MB.
+    introVideo.src = innerWidth < 900
+      ? 'assets/video/intro-mobile.mp4'
+      : 'assets/video/intro-desktop.mp4';
+    introVideo.load();
+  }
+
+  // Pixel di scroll consumati dall'intro. Tutto ciò che ragiona in "quanto
+  // sono sceso nella pagina" (sfondo 3D, nav compatta) deve sottrarli,
+  // altrimenti al termine del filmato il sito si troverebbe già a metà delle
+  // proprie animazioni invece che al proprio inizio.
+  let scrollBase = 0;
 
   /* ===========================================================================
      1. WEBGL — nuvola di particelle che cambia forma con lo scroll
@@ -169,7 +222,7 @@
   let morphed = 0;                      // posizione attuale nel morphing, smorzata
 
   function measureDoc() {
-    docMax = Math.max(1, document.documentElement.scrollHeight - innerHeight);
+    docMax = Math.max(1, document.documentElement.scrollHeight - innerHeight - scrollBase);
   }
 
   function initGL() {
@@ -306,7 +359,12 @@
 
     // Lo scroll grezzo è a scatti: due smorzamenti in cascata (uno sulla
     // posizione, uno sul morphing) lo trasformano in un movimento continuo.
-    scrollP += (scrollY / docMax - scrollP) * 0.06;
+    // scrollBase toglie di mezzo la corsa dell'intro: per la scena 3D il
+    // "punto zero" è la fine del filmato, così la sfera si trova nella sua
+    // forma iniziale — la stessa che si vede nell'ultimo fotogramma — proprio
+    // quando la pagina prende il comando.
+    const sy = Math.max(0, scrollY - scrollBase);
+    scrollP += (Math.min(1, sy / docMax) - scrollP) * 0.06;
     morphed += (scrollP - morphed) * 0.12;
     morph(morphed);
 
@@ -588,6 +646,390 @@
   }
 
   /* ===========================================================================
+     3b. INTRO — IL FILMATO GUIDATO DALLO SCROLL
+     ===========================================================================
+     L'idea, in una riga: il filmato non finisce, cambia supporto.
+
+     L'ultimo fotogramma del video è questa stessa hero, renderizzata a
+     1920×1080. Quindi il problema non è "far comparire il sito dopo il video",
+     ma far coincidere due immagini della stessa cosa. Quello che segue fa
+     esattamente tre cose:
+
+       1. lega il tempo del video alla posizione di scroll (avanti e indietro);
+       2. calcola, sul layout reale del momento, la trasformazione che porta il
+          fotogramma finale sopra la hero vera — perché lo schermo di chi
+          guarda quasi mai è 16:9 come il filmato;
+       3. scambia i due strati mentre entrambi si stanno ancora muovendo, con
+          lo stesso identico movimento: l'occhio segue il movimento e non si
+          accorge della sostituzione.
+
+     Punti di riferimento misurati sul fotogramma finale del filmato, in pixel
+     del video (spazio 1280×720). Sono gli stessi elementi che il DOM espone
+     qui sotto: il filetto sopra il sottotitolo, il logo nella nav, il bottone.
+     =========================================================================== */
+
+  const REF_W = 1280, REF_H = 720;
+  const REF_TITLE_TL = [  60, 283];   // angolo alto-sinistro del blocco titolo
+  const REF_TITLE_BR = [1220, 572];   // angolo basso-destro
+  const REF_RULE_L   = [  60, 615];   // estremi del filetto sopra il sottotitolo
+  const REF_RULE_R   = [1220, 615];
+  const REF_MARK     = [ 71.5, 71.5]; // centro del logo nella nav
+  const REF_TOPBAND  = 118;           // sotto questa quota inizia il brandmark
+
+  /* Tappe della corsa dell'intro, in frazione (0..1).
+     Il video arriva all'ultimo fotogramma a V_END e da lì resta fermo: gli
+     ultimi 15 fotogrammi del filmato sono già un'immagine statica, ed è
+     proprio su quell'immagine ferma che si costruisce il raccordo. */
+  const V_END  = 0.86;                  // fine del filmato
+  /* SET_A cade dove il filmato sta ancora rallentando (~6,5 s): l'allineamento
+     comincia dentro il movimento del video invece che dopo, e per questo si
+     legge come la fine della corsa della camera e non come una correzione. */
+  const SET_A  = 0.70, SET_B = 0.92;    // il quadro si allinea alla pagina
+  const FADE_A = 0.92, FADE_B = 0.978;  // scambio degli strati
+  const LIVE_A = 0.92, LIVE_B = 1.00;   // ultimo tratto di corsa della camera
+  const E_AMP  = 0.012;                 // ampiezza di quell'ultimo tratto
+
+  const clamp01  = v => (v < 0 ? 0 : v > 1 ? 1 : v);
+  const seg      = (p, a, b) => clamp01((p - a) / (b - a));
+  const outCubic = t => 1 - Math.pow(1 - t, 3);
+  const outQuad  = t => 1 - Math.pow(1 - t, 2);
+
+  function initIntro() {
+    const intro = introEl;
+    const stage = document.getElementById('introStage');
+    const vid   = introVideo;
+    const hint  = document.getElementById('introHint');
+    const mask  = document.getElementById('introNavMask');
+    const hero  = document.querySelector('.hero');
+    const stick = document.querySelector('.hero__sticky');
+    const navEl = document.getElementById('nav');
+    const scene = document.getElementById('scene');
+    const cue   = document.querySelector('.hero__scroll');
+    if (!intro || !stage || !vid || !hero || !stick) { disableIntro(); return; }
+
+    if (cue) cue.style.opacity = '0';   // entra alla fine, vedi apply()
+
+    let dur     = vid.duration || 8;
+    let introPx = 0;
+    let match   = { k: 1, tx: 0, ty: 0, sphere: 1, mask: false, maskY: 0 };
+    let done    = false;
+    let hintOff = false;
+
+    /* --- quanto scroll dura l'intro ---
+       In pixel, non in vh: su mobile 100vh cambia quando la barra degli
+       indirizzi si ritrae, e la corsa si allungherebbe a metà filmato. */
+    let lastW = 0, lastH = 0;
+    function measureIntro() {
+      const w = innerWidth, h = innerHeight;
+      // Su telefono la barra degli indirizzi che si ritrae genera un resize
+      // di un centinaio di pixel: ricalcolare lì significherebbe allungare la
+      // corsa mentre il filmato è a metà, cioè uno scatto.
+      if (introPx && w === lastW && Math.abs(h - lastH) < 140) return;
+      lastW = w; lastH = h;
+      introPx = Math.round(h * (w < 900 ? 2.6 : 3.8));
+      scrollBase = introPx;
+      document.documentElement.style.setProperty('--intro-scroll', introPx + 'px');
+    }
+
+    /* --- il cuore: dove finisce il filmato deve esserci la pagina ---
+
+       Il video viene disegnato con object-fit:cover, quindi so esattamente
+       dove finisce sullo schermo un qualunque punto del filmato. Confronto
+       quei punti con la posizione reale degli stessi elementi nel DOM e cerco
+       l'unica scala + traslazione che li fa combaciare meglio di qualunque
+       altra (minimi quadrati su una similitudine, senza rotazione).
+
+       Perché non basta sovrapporre e basta: il filmato è 16:9 e ha un layout
+       "grande" (a 1920 tutte le clamp() del CSS sono al massimo), mentre lo
+       schermo di chi guarda è quasi sempre 16:10 e ha misure più piccole. Il
+       filetto della hero pesa 3 e la nav 1 perché il blocco del titolo è la
+       massa visiva che l'occhio usa come riferimento: se combacia quello,
+       combacia la scena.
+
+       Su 1920×1080 il risultato è una coincidenza pressoché esatta; su
+       1440×900 lo scarto massimo resta di una decina di pixel, su testo
+       piccolo, e durante un movimento. */
+    function computeMatch() {
+      const vw = innerWidth, vh = innerHeight;
+      const s0 = Math.max(vw / REF_W, vh / REF_H);      // scala di object-fit:cover
+      const toScreen = p => [ vw / 2 + (p[0] - REF_W / 2) * s0,
+                              vh / 2 + (p[1] - REF_H / 2) * s0 ];
+
+      const meta  = document.querySelector('.hero__meta');
+      const title = document.querySelector('.hero__title');
+      const off   = { k: 1, tx: 0, ty: 0, sphere: 1, maskY: 0, mask: false };
+
+      // Sotto i 900px il layout non è più quello del filmato (nav ridotta,
+      // tipografia su un'altra scala): un raccordo geometrico non avrebbe
+      // senso, e forzarlo peggiorerebbe le cose. Lì si resta sul quadro pieno.
+      if (!meta || !title || vw < 900) return off;
+
+      const m = meta.getBoundingClientRect();
+      const t = title.getBoundingClientRect();
+      if (!t.width || !m.width) return off;
+
+      /* Il blocco del titolo pesa 5 e il filetto 1. Non è arbitrario: il
+         titolo occupa da solo quasi metà del quadro ed è l'unica cosa che
+         l'occhio usa davvero come riferimento. Se combacia lui, combacia la
+         scena; se sacrificassi lui per far quadrare i dettagli, si vedrebbe. */
+      const pts = [
+        [toScreen(REF_TITLE_TL), [t.left,  t.top],    5],
+        [toScreen(REF_TITLE_BR), [t.right, t.bottom], 5],
+        [toScreen(REF_RULE_L),   [m.left,  m.top],    1],
+        [toScreen(REF_RULE_R),   [m.right, m.top],    1]
+      ];
+
+      let W = 0, ax = 0, ay = 0, bx = 0, by = 0;
+      for (const [a, b, w] of pts) {
+        W += w; ax += a[0] * w; ay += a[1] * w; bx += b[0] * w; by += b[1] * w;
+      }
+      ax /= W; ay /= W; bx /= W; by /= W;
+
+      let num = 0, den = 0;
+      for (const [a, b, w] of pts) {
+        const dax = a[0] - ax, day = a[1] - ay;
+        num += w * (dax * (b[0] - bx) + day * (b[1] - by));
+        den += w * (dax * dax + day * day);
+      }
+      let k = den > 1e-6 ? num / den : 1;
+      k = Math.min(2, Math.max(0.45, k));       // guardia contro misure assurde
+      const tx = bx - k * ax, ty = by - k * ay;
+
+      /* La nav è il punto in cui questo metodo tocca il proprio limite, ed è
+         onesto dirlo: è ancorata in ALTO mentre tutta la hero è ancorata in
+         BASSO. Se lo schermo non ha le proporzioni del filmato, nessuna
+         singola scala può soddisfarle entrambe — o combacia la nav o combacia
+         il titolo, e il titolo vale incomparabilmente di più.
+         Quindi: si misura di quanto la nav sbaglierebbe. Se lo scarto è
+         trascurabile (schermo 16:9, il caso in cui il filmato è stato
+         prodotto) non si fa nulla e combacia tutto. Se è visibile, la fascia
+         alta del filmato viene spenta sul nero prima dello scambio: la nav
+         del video si dissolve nel fondo e riappare, un istante dopo, quella
+         vera al proprio posto. Due eventi piccoli e scuri al posto di un
+         salto di cento pixel. */
+      let mask = false, maskY = 0;
+      const markEl = document.querySelector('.nav__mark');
+      if (markEl) {
+        const r = markEl.getBoundingClientRect();
+        const a = toScreen(REF_MARK);
+        const dx = k * a[0] + tx - (r.left + r.width / 2);
+        const dy = k * a[1] + ty - (r.top + r.height / 2);
+        if (Math.hypot(dx, dy) > 14) {
+          mask  = true;
+          maskY = Math.max(0, vh / 2 + (REF_TOPBAND - REF_H / 2) * s0);
+        }
+      }
+
+      /* La sfera merita un conto a parte. Il suo raggio a schermo dipende solo
+         dall'altezza del viewport (la camera three.js ha fov verticale): nel
+         filmato vale C·720 pixel-video, nella pagina C·innerHeight. Questo
+         rapporto dice di quanto va scalata la scena 3D perché, nell'istante
+         dello scambio, sia la STESSA sfera — stesso centro, stesso diametro,
+         stessa densità apparente di puntini. Da lì torna a 1 accompagnando
+         l'ultimo tratto di camera, invece di saltare. */
+      const sphere = (REF_H * s0 * k) / vh;
+
+      return { k, tx, ty, sphere, mask, maskY };
+    }
+
+    /* Disegna lo stato corrispondente a una posizione `p` (0..1) della corsa.
+       Nessun ramo "avanti/indietro": p è funzione pura dello scroll, quindi
+       risalire ripercorre esattamente la stessa strada al contrario. */
+    function apply(p) {
+
+      /* 1 — il fotogramma.
+         Si cerca solo se il decoder ha finito la ricerca precedente: chiedere
+         un nuovo currentTime mentre `seeking` è true accoda richieste e il
+         video comincia a singhiozzare. La soglia evita ricerche inutili
+         quando lo scarto è sotto il fotogramma. */
+      if (vid.readyState >= 2) {
+        const t = clamp01(p / V_END) * dur;
+        if (!vid.seeking && Math.abs(vid.currentTime - t) > 1 / 90) {
+          try { vid.currentTime = t; } catch (err) { /* ricerca rifiutata: si riprova al frame dopo */ }
+        }
+      }
+
+      /* 2 — il quadro si allinea alla pagina.
+         Succede mentre il filmato è già fermo sull'ultimo fotogramma: non si
+         legge come una correzione, si legge come la camera che si assesta. */
+      const s  = outCubic(seg(p, SET_A, SET_B));
+      const mk = 1 + (match.k - 1) * s;
+      const mx = match.tx * s;
+      const my = match.ty * s;
+
+      // Fascia alta: si spegne insieme al raccordo, e solo dove serve
+      // davvero (vedi computeMatch). Su 16:9 resta a zero e la nav del
+      // filmato passa direttamente in quella vera.
+      if (mask && match.mask) mask.style.opacity = String(s);
+
+      /* 3 — l'ultimo tratto di camera, condiviso.
+         `e` viene applicato IDENTICO al video e alla pagina vera. È questo il
+         motivo per cui lo scambio non si vede: nell'istante in cui avviene, i
+         due strati non sono due immagini ferme leggermente diverse, ma la
+         stessa immagine che si sta muovendo allo stesso modo. */
+      const l   = outQuad(seg(p, LIVE_A, LIVE_B));
+      const e   = 1 - E_AMP * (1 - l);
+      const cx  = innerWidth / 2, cy = innerHeight / 2;
+      const eTx = cx * (1 - e), eTy = cy * (1 - e);
+
+      // video: prima il raccordo, poi la camera condivisa
+      stage.style.transform =
+        'translate(' + (e * mx + eTx).toFixed(2) + 'px,' + (e * my + eTy).toFixed(2) + 'px) ' +
+        'scale(' + (e * mk).toFixed(5) + ')';
+
+      // pagina vera: solo la camera condivisa
+      const pageT = 'translate(' + eTx.toFixed(2) + 'px,' + eTy.toFixed(2) + 'px) scale(' + e.toFixed(5) + ')';
+      stick.style.transform = pageT;
+      if (navEl) navEl.style.transform = pageT;
+
+      // sfondo 3D: camera condivisa + assestamento della sfera
+      if (scene) {
+        const sk = e * (1 + (match.sphere - 1) * (1 - l));
+        scene.style.transform =
+          'translate(' + (cx * (1 - sk)).toFixed(2) + 'px,' + (cy * (1 - sk)).toFixed(2) + 'px) ' +
+          'scale(' + sk.toFixed(5) + ')';
+      }
+
+      /* 4 — lo scambio vero e proprio.
+         Su schermo stretto il raccordo geometrico non c'è (layout diverso da
+         quello del filmato): lo scambio viene allungato, così il passaggio è
+         un arrivo morbido invece di uno stacco. */
+      const wide = innerWidth >= 900;
+      intro.style.opacity = String(1 - seg(p, wide ? FADE_A : 0.84,
+                                              wide ? FADE_B : 0.99));
+
+      /* L'indicatore "Scorri" nell'ultimo fotogramma del filmato non c'è: il
+         quadro del video si ferma poco sopra. Farlo comparire insieme allo
+         scambio sarebbe l'unico dettaglio a tradire il passaggio, quindi
+         entra subito dopo, quando il sito ha già preso il comando — si legge
+         come l'invito a proseguire, non come un pezzo che spunta. */
+      if (cue) cue.style.opacity = String(seg(p, 0.965, 1));
+
+      if (!hintOff && p > 0.012) {
+        hintOff = true;
+        if (hint) gsap.to(hint, { opacity: 0, duration: 0.5, ease: 'power2.out' });
+      }
+
+      /* 5 — fine corsa: l'intro esce di scena e la pagina torna pulita.
+         Reversibile, perché si può sempre risalire. */
+      const shouldEnd = p >= 0.999;
+      if (shouldEnd !== done) {
+        done = shouldEnd;
+        intro.classList.toggle('is-done', done);
+        if (done) {
+          stick.style.transform = '';
+          if (navEl) navEl.style.transform = '';
+          if (scene) scene.style.transform = '';
+        }
+      }
+    }
+
+    /* --- collegamento allo scroll ---
+       scrub non è un vezzo: trasforma i gradini della rotella in una corsa
+       continua, ed è ciò che tiene lontani scatti e micro-blocchi quando il
+       decoder impiega qualche millisecondo in più a servire un fotogramma. */
+    const proxy = { p: 0 };
+    const tween = gsap.to(proxy, {
+      p: 1, duration: 1, ease: 'none',
+      onUpdate: () => apply(proxy.p),
+      scrollTrigger: {
+        trigger: hero,
+        start: 'top top',
+        end: () => '+=' + introPx,
+        scrub: 0.5,
+        invalidateOnRefresh: true
+      }
+    });
+    const st = tween.scrollTrigger;
+
+    // Il raccordo dipende dal layout: va ricalcolato a ogni rimisurazione,
+    // non una volta sola. La maschera cambia solo qui, non a ogni fotogramma.
+    function remeasure() {
+      // Le misure vanno prese sul layout NUDO: se restassero applicate le
+      // trasformazioni del raccordo, getBoundingClientRect le includerebbe e
+      // il calcolo si inseguirebbe da solo a ogni ridimensionamento.
+      const ps = stick.style.transform, pn = navEl ? navEl.style.transform : '';
+      stick.style.transform = '';
+      if (navEl) navEl.style.transform = '';
+
+      match = computeMatch();
+
+      stick.style.transform = ps;
+      if (navEl) navEl.style.transform = pn;
+
+      measureDoc();
+      if (mask) {
+        mask.style.height = 'calc(100% + ' + match.maskY.toFixed(1) + 'px)';
+        if (!match.mask) mask.style.opacity = '0';
+      }
+    }
+
+    // L'altezza della hero dipende da --intro-scroll: va scritta PRIMA che
+    // ScrollTrigger prenda le misure, non dopo.
+    ScrollTrigger.addEventListener('refreshInit', measureIntro);
+    ScrollTrigger.addEventListener('refresh', remeasure);
+
+    measureIntro();
+    ScrollTrigger.refresh();
+    remeasure();
+    apply(0);
+
+    // Metadati: la durata reale sostituisce la stima appena disponibile.
+    if (vid.readyState < 1) {
+      vid.addEventListener('loadedmetadata', () => {
+        dur = vid.duration || dur;
+        apply(proxy.p);
+      }, { once: true });
+    } else {
+      dur = vid.duration || dur;
+    }
+    // Primo fotogramma disponibile: si ridisegna, altrimenti finché non si
+    // scorre il video resterebbe vuoto.
+    vid.addEventListener('loadeddata', () => apply(proxy.p), { once: true });
+
+    // Se il file non arriva proprio, meglio un sito senza intro che un sito
+    // con dieci schermate di nero.
+    setTimeout(() => {
+      if (vid.readyState >= 2) return;
+      if (st) st.kill();
+      tween.kill();
+      if (cue) cue.style.opacity = '';
+      scrollTo(0, 0);            // la hero si accorcia: meglio ripartire da capo
+      disableIntro();
+    }, 9000);
+
+    // Il logo della nav punta a #top, che con l'intro coincide con l'inizio
+    // del filmato: cliccandolo si tornerebbe al laptop. Deve invece riportare
+    // all'inizio del sito.
+    const logo = document.querySelector('.nav__logo');
+    if (logo) {
+      logo.addEventListener('click', ev => {
+        ev.preventDefault();
+        scrollTo({ top: scrollBase, behavior: 'smooth' });
+      });
+    }
+  }
+
+  /* Rimette il sito com'era: usata sia quando l'intro non è supportata sia
+     quando il video non si carica. */
+  function disableIntro() {
+    document.documentElement.classList.remove('has-intro');
+    document.documentElement.style.removeProperty('--intro-scroll');
+    if (introEl) introEl.style.display = 'none';
+
+    // Le trasformazioni di raccordo vanno tolte, altrimenti la pagina
+    // resterebbe congelata al 98,8% con la sfera fuori scala.
+    ['.hero__sticky', '.nav', '#scene'].forEach(sel => {
+      const el = document.querySelector(sel);
+      if (el) el.style.transform = '';
+    });
+
+    scrollBase = 0;
+    measureDoc();
+    if (hasST) ScrollTrigger.refresh();
+  }
+
+  /* ===========================================================================
      4. INTRO DELLA HERO
      ===========================================================================
      fromTo() ovunque: GSAP imposta sia partenza sia arrivo, quindi le unità
@@ -743,7 +1185,9 @@
     if (nav) {
       ScrollTrigger.create({
         start: 'top -80',
-        onUpdate: self => nav.classList.toggle('is-stuck', self.scroll() > 80)
+        // scrollBase: durante l'intro la pagina è ferma, la nav non deve
+        // compattarsi mentre scorre il filmato
+        onUpdate: self => nav.classList.toggle('is-stuck', self.scroll() > scrollBase + 80)
       });
     }
   }
@@ -886,7 +1330,7 @@
     });
   }
 
-  function loadBackground() {
+  function loadBackground(eager) {
     if (reduced) return;
 
     // Rispetta chi ha attivato il risparmio dati e chi ha poca memoria:
@@ -898,6 +1342,11 @@
     const go = () => loadScript('vendor/three.min.js')
       .then(() => { if (initGL()) renderLoop(); })
       .catch(() => { /* nessuno sfondo: la pagina funziona identica */ });
+
+    // Con l'intro non si può aspettare: la sfera deve già girare quando il
+    // filmato consegna la scena. Se arrivasse dopo, comparirebbe dal nulla
+    // proprio nel punto in cui il raccordo deve essere invisibile.
+    if (eager) { go(); return; }
 
     // requestIdleCallback aspetta che il browser non abbia altro da fare;
     // il timeout garantisce che non venga rimandato all'infinito.
@@ -926,15 +1375,20 @@
     liquidLogo();
 
     runLoader(() => {
-      heroIn();
+      // Con l'intro la hero non "entra": è già entrata dentro al filmato.
+      // Deve trovarsi composta e ferma, identica all'ultimo fotogramma, così
+      // che il raccordo non debba far combaciare anche due animazioni.
+      if (introOn) { composeHero(); initIntro(); }
+      else heroIn();
+
       scrollAnims();
       // Le misure di ScrollTrigger sono state prese mentre il preloader
       // copriva la pagina: vanno rifatte ora che il layout è quello vero.
       if (hasST) ScrollTrigger.refresh();
       measureDoc();
-      // Solo adesso lo sfondo 3D: la parte pesante arriva quando il
-      // contenuto è già visibile e l'utente può già leggere.
-      loadBackground();
+      // Sfondo 3D: subito se c'è l'intro, altrimenti quando il browser è
+      // libero — la parte pesante arriva quando il contenuto è già leggibile.
+      loadBackground(introOn);
     });
   }
 

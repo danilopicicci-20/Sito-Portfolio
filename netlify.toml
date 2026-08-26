@@ -40,13 +40,16 @@
     #   font-src    'self'   i woff2 sono in assets/fonts/
     #   connect-src 'self'   il sito non chiama nessuna API: qualunque fetch verso
     #                        l'esterno verrebbe bloccato (utile contro l'esfiltrazione)
+    #   media-src   'self'   serve il filmato dell'intro (assets/video/). Con
+    #                        'none' il <video> verrebbe bloccato dal browser
+    #                        e l'intro non partirebbe mai in produzione.
     #   base-uri / form-action 'none'  non c'è <base> e non ci sono form da dirottare
     #   frame-ancestors 'none'         nessuno può incorniciare il sito
     #   object-src 'none'              niente Flash/plugin, vettore storico di guai
     #
     # NOTA: se in futuro aggiungi analytics, un form o un embed (YouTube, Maps,
     # Calendly…), va autorizzata qui la loro origine, altrimenti non partono.
-    Content-Security-Policy = "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'self'; manifest-src 'self'; media-src 'none'; object-src 'none'; frame-src 'none'; worker-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; upgrade-insecure-requests"
+    Content-Security-Policy = "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'self'; manifest-src 'self'; media-src 'self'; object-src 'none'; frame-src 'none'; worker-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; upgrade-insecure-requests"
 
     # Forza HTTPS per un anno anche se qualcuno digita http://.
     # 'preload' è volutamente assente: iscriversi alla lista dei browser è
@@ -99,6 +102,17 @@
   for = "/assets/fonts/*"
   [headers.values]
     Cache-Control = "public, max-age=31536000, immutable"
+
+# Il filmato dell'intro: pesante, e identico a ogni visita. Un anno di cache.
+# Accept-Ranges è ciò che permette al browser di saltare a un punto qualsiasi
+# del file senza scaricarlo tutto — è il meccanismo su cui poggia lo scrubbing
+# fotogramma per fotogramma. Netlify lo serve già di suo, la riga è qui per
+# rendere esplicito che quel comportamento è un requisito, non un dettaglio.
+[[headers]]
+  for = "/assets/video/*"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"
+    Accept-Ranges = "bytes"
 
 # Le librerie sono a versione fissa ma il nome non la contiene: cache lunga
 # ma non "immutable", così un eventuale aggiornamento si propaga.

@@ -191,6 +191,82 @@ em{ font-family:var(--serif); font-style:italic; font-weight:400; }
   .loader__ring, #loaderWave, #loaderWave2{ stroke-dashoffset:0; }
 }
 
+/* =============== INTRO (filmato del laptop) ===============
+   Nascosta di default: se JS non parte, o se il video non è utilizzabile,
+   questo blocco semplicemente non esiste e il sito è quello di sempre.
+   È main.js ad aggiungere .has-intro su <html>, e lo fa mentre il preloader
+   copre ancora lo schermo — così il cambio di altezza della hero non si vede.
+
+   z-index 140: sopra la nav (100), sotto il cursore (150) e sotto il
+   preloader (200), che deve restare l'ultimo strato.
+   ============================================================ */
+.intro{ display:none; }
+html.has-intro .intro{
+  display:block;
+  position:fixed; inset:0; z-index:140;
+  /* stesso nero del sito: quando il raccordo finale rimpicciolisce di poco il
+     quadro, i bordi non si distinguono dallo sfondo della pagina */
+  background:var(--bg);
+  overflow:hidden;
+  pointer-events:none;            /* lo scroll passa comunque alla pagina */
+  contain:layout paint;
+  will-change:opacity;
+}
+html.has-intro .intro.is-done{ display:none; }
+
+/* Il quadro. Nell'ultimo tratto di scroll riceve da JS una trasformazione
+   (scala + traslazione) calcolata sul layout reale della hero: serve a far
+   coincidere il fotogramma finale del filmato con la pagina vera anche su
+   schermi che non sono 16:9. Vedi computeMatch() in main.js. */
+.intro__stage{
+  position:absolute; inset:0;
+  transform-origin:0 0;
+  will-change:transform;
+  backface-visibility:hidden;
+}
+.intro__video{
+  position:absolute; inset:0;
+  width:100%; height:100%;
+  object-fit:cover;
+  display:block;
+  /* il decoder lavora su un layer suo: niente ridisegni della pagina a ogni
+     fotogramma cercato */
+  transform:translateZ(0);
+}
+
+/* Copre la fascia alta del filmato (la nav) quando lo schermo non ha le
+   proporzioni del video. Vive DENTRO lo stage, quindi riceve la stessa
+   trasformazione del quadro e resta incollata al fotogramma. left/width
+   abbondanti perché deve coprire anche dopo la scala; il gradiente evita che
+   il bordo inferiore si legga come una riga. */
+.intro__navmask{
+  position:absolute;
+  left:-50%; width:200%;
+  top:-100%; height:100%;
+  background:linear-gradient(to top, rgba(7,7,10,0), var(--bg) 24px);
+  opacity:0;
+  pointer-events:none;
+}
+
+/* Invito allo scroll: senza, davanti a un laptop immobile si resta fermi.
+   Sparisce al primo movimento e non torna più. */
+.intro__hint{
+  position:absolute; left:50%; bottom:clamp(28px,5vh,54px);
+  transform:translateX(-50%);
+  display:flex; flex-direction:column; align-items:center; gap:12px;
+  font-size:11.5px; font-weight:500; letter-spacing:.24em; text-transform:uppercase;
+  color:var(--ink-dim);
+  text-shadow:0 1px 12px rgba(0,0,0,.7);
+  pointer-events:none;
+}
+.intro__hintline{ width:1px; height:38px; background:var(--line); overflow:hidden; }
+.intro__hintline i{
+  display:block; width:100%; height:40%;
+  background:var(--accent);
+  animation:introhint 2s var(--ease) infinite;
+}
+@keyframes introhint{ 0%{transform:translateY(-110%)} 100%{transform:translateY(340%)} }
+
 /* =============== CURSOR =============== */
 /* goccia liquida: nessun anello, si allunga nella direzione del movimento */
 .cursor{
@@ -318,10 +394,41 @@ main, .nav, .footer{ position:relative; z-index:2; }
 .sec-head h2{ font:inherit; letter-spacing:inherit; color:inherit; }
 
 /* =============== HERO =============== */
-.hero{
+.hero{ min-height:100svh; }
+
+/* Il vero contenitore della hero. Prima queste proprietà stavano su .hero:
+   sono state spostate qui dentro perché, quando l'intro è attiva, .hero deve
+   poter diventare molto più alta (è lei a fornire la corsa di scroll del
+   filmato) mentre la composizione visiva deve restare alta esattamente una
+   schermata. Senza intro le due regole insieme valgono quanto la vecchia. */
+.hero__sticky{
   min-height:100svh; display:flex; flex-direction:column; justify-content:flex-end;
   padding:120px var(--pad) 44px;
 }
+
+/* --- modalità intro ---------------------------------------------------
+   --intro-scroll è scritta da JS in pixel (non in vh: su mobile vh cambia
+   quando la barra degli indirizzi si ritrae, e la corsa dell'intro si
+   allungherebbe a metà animazione).
+   La sezione diventa alta "una schermata + la corsa"; il blocco interno resta
+   incollato in alto per tutta la corsa e si stacca esattamente quando il
+   filmato è finito. Risultato: alla fine dell'intro la pagina è già
+   posizionata sulla hero, non deve "arrivarci". */
+html.has-intro .hero{ min-height:calc(100svh + var(--intro-scroll, 0px)); }
+html.has-intro .hero__sticky{
+  position:sticky; top:0; height:100svh; min-height:0;
+}
+
+/* Nell'ultimo tratto del raccordo questi tre strati ricevono da JS la stessa
+   identica trasformazione del filmato. L'origine deve essere l'angolo in alto
+   a sinistra perché è lì che è ancorato il calcolo in computeMatch(): con
+   l'origine al centro (il default) gli stessi numeri darebbero un altro
+   risultato. */
+html.has-intro .hero__sticky,
+html.has-intro .nav,
+html.has-intro #scene{ transform-origin:0 0; }
+/* niente will-change qui: resterebbe attivo per tutta la visita, promuovendo
+   a livello di composizione tre elementi che dopo l'intro non si muovono più */
 
 /* logotipo "Fluid Studio": icona a cerchio (onda animata) + scritta */
 .brandmark{
@@ -792,7 +899,7 @@ main, .nav, .footer{ position:relative; z-index:2; }
   .nav__mark{ width:30px; height:30px; }
   .nav__cta{ font-size:12px; padding:8px 16px; }
 
-  .hero{ padding:96px var(--pad) 32px; }
+  .hero__sticky{ padding:96px var(--pad) 32px; }
   .brandmark{ gap:11px; margin-bottom:16px; }
   .brandmark__icon{ width:54px; height:54px; }
   /* su schermo stretto riduco un filo la tracciatura, altrimenti va a capo */
