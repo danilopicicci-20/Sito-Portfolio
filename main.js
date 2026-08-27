@@ -669,18 +669,16 @@
      =========================================================================== */
 
   const REF_W = 1280, REF_H = 720;
-  const REF_TITLE_TL = [  60, 283];   // angolo alto-sinistro del blocco titolo
-  const REF_TITLE_BR = [1220, 572];   // angolo basso-destro
-  const REF_RULE_L   = [  60, 615];   // estremi del filetto sopra il sottotitolo
-  const REF_RULE_R   = [1220, 615];
-  const REF_MARK     = [ 71.5, 71.5]; // centro del logo nella nav
+  const REF_TITLE_TL = [ 231, 271];   // angolo alto-sinistro del blocco titolo
+  const REF_TITLE_BR = [ 754, 470];   // angolo basso-destro
+  const REF_RULE_L   = [ 296, 652];   // estremi del filetto sopra il sottotitolo
+  const REF_RULE_R   = [ 993, 652];
+  const REF_MARK     = [199.0, 81.0]; // centro del logo nella nav
   const REF_TOPBAND  = 118;           // sotto questa quota inizia il brandmark
 
   /* Tappe della corsa dell'intro, in frazione (0..1).
-     Il video arriva all'ultimo fotogramma a V_END e da lì resta fermo: gli
-     ultimi 15 fotogrammi del filmato sono già un'immagine statica, ed è
-     proprio su quell'immagine ferma che si costruisce il raccordo. */
-  const V_END  = 0.86;                  // fine del filmato
+     Il video arriva all'ultimo fotogramma a V_END e da lì resta fermo. */
+  const V_END  = 0.92;                  // fine del filmato (ultimi frame statici)
   /* SET_A cade dove il filmato sta ancora rallentando (~6,5 s): l'allineamento
      comincia dentro il movimento del video invece che dopo, e per questo si
      legge come la fine della corsa della camera e non come una correzione. */
