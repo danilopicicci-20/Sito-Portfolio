@@ -99,8 +99,12 @@
   const introVideo = document.getElementById('introVideo');
   const netInfo    = navigator.connection;
 
+  /* Su un dispositivo con poca memoria l'intro chiederebbe di decodificare un
+     video mentre gira una scena WebGL: meglio non proporla affatto che
+     proporla a scatti. Stessa logica del risparmio dati. */
   const introOn = !!(introEl && introVideo) && hasST && !reduced
                   && !(netInfo && netInfo.saveData)
+                  && !(navigator.deviceMemory && navigator.deviceMemory < 4)
                   && !!introVideo.canPlayType('video/mp4; codecs="avc1.4d401f"');
 
   if (introOn) {
@@ -350,9 +354,17 @@
     geo.attributes.position.needsUpdate = true;
   }
 
+  /* Interruttore della scena 3D. Durante la prima parte dell'intro il sito è
+     completamente coperto dal filmato: disegnare migliaia di particelle che
+     nessuno vede toglierebbe al decoder video proprio il tempo di CPU e di GPU
+     che serve a scorrere senza scatti. Si riaccende molto prima del raccordo,
+     così la sfera è già viva e in rotazione quando la pagina prende il
+     comando — non deve "comparire", deve trovarsi lì. */
+  let glGate = true;
+
   function renderLoop() {
     requestAnimationFrame(renderLoop);
-    if (!renderer) return;
+    if (!renderer || !glGate) return;
 
     const el = clock.getElapsedTime();
     uniforms.uTime.value = el;
@@ -669,16 +681,26 @@
      =========================================================================== */
 
   const REF_W = 1280, REF_H = 720;
-  const REF_TITLE_TL = [ 231, 271];   // angolo alto-sinistro del blocco titolo
-  const REF_TITLE_BR = [ 754, 470];   // angolo basso-destro
-  const REF_RULE_L   = [ 296, 652];   // estremi del filetto sopra il sottotitolo
-  const REF_RULE_R   = [ 993, 652];
-  const REF_MARK     = [199.0, 81.0]; // centro del logo nella nav
+  const REF_TITLE_TL = [  60, 283];   // angolo alto-sinistro del blocco titolo
+  const REF_TITLE_BR = [1220, 572];   // angolo basso-destro
+  const REF_RULE_L   = [  60, 615];   // estremi del filetto sopra il sottotitolo
+  const REF_RULE_R   = [1220, 615];
+  const REF_MARK     = [ 71.5, 71.5]; // centro del logo nella nav
   const REF_TOPBAND  = 118;           // sotto questa quota inizia il brandmark
 
+  /* Il filmato è a 30 fps esatti. Serve saperlo: cercare un istante qualunque
+     dentro un fotogramma costringe il decoder a lavorare per poi mostrare
+     comunque quel fotogramma, e due posizioni di scroll vicine possono
+     cadere una prima e una dopo il confine — da lì nascono lo sfarfallio e i
+     micro-blocchi. Si cerca invece il CENTRO del fotogramma voluto, e solo
+     quando il fotogramma voluto cambia davvero. */
+  const REF_FPS = 30;
+
   /* Tappe della corsa dell'intro, in frazione (0..1).
-     Il video arriva all'ultimo fotogramma a V_END e da lì resta fermo. */
-  const V_END  = 0.92;                  // fine del filmato (ultimi frame statici)
+     Il video arriva all'ultimo fotogramma a V_END e da lì resta fermo: gli
+     ultimi ~17 fotogrammi sono già un'immagine statica (la camera ha finito
+     di entrare), ed è su quell'immagine ferma che si costruisce il raccordo. */
+  const V_END  = 0.88;                  // fine del filmato
   /* SET_A cade dove il filmato sta ancora rallentando (~6,5 s): l'allineamento
      comincia dentro il movimento del video invece che dopo, e per questo si
      legge come la fine della corsa della camera e non come una correzione. */
@@ -712,6 +734,7 @@
     let match   = { k: 1, tx: 0, ty: 0, sphere: 1, mask: false, maskY: 0 };
     let done    = false;
     let hintOff = false;
+    let lastFrame = -1;   // ultimo fotogramma richiesto al decoder
 
     /* --- quanto scroll dura l'intro ---
        In pixel, non in vh: su mobile 100vh cambia quando la barra degli
@@ -836,14 +859,27 @@
     function apply(p) {
 
       /* 1 — il fotogramma.
-         Si cerca solo se il decoder ha finito la ricerca precedente: chiedere
-         un nuovo currentTime mentre `seeking` è true accoda richieste e il
-         video comincia a singhiozzare. La soglia evita ricerche inutili
-         quando lo scarto è sotto il fotogramma. */
+         Tre accorgimenti, e servono tutti e tre:
+
+         · si ragiona in NUMERO di fotogramma, non in secondi. Fra due
+           posizioni di scroll vicinissime il fotogramma da mostrare è lo
+           stesso: senza questo controllo si chiederebbero decine di ricerche
+           al secondo che finiscono tutte sulla stessa immagine — lavoro
+           inutile che il decoder paga con micro-blocchi.
+         · si cerca il CENTRO del fotogramma (+0,5). Puntare al confine
+           esatto lascia decidere all'arrotondamento quale dei due mostrare,
+           e a ogni frame può cambiare idea: è esattamente lo sfarfallio.
+         · non si chiede nulla mentre `seeking` è true. Accodare ricerche a
+           un decoder che sta già cercando è il modo più rapido per farlo
+           singhiozzare. */
       if (vid.readyState >= 2) {
-        const t = clamp01(p / V_END) * dur;
-        if (!vid.seeking && Math.abs(vid.currentTime - t) > 1 / 90) {
-          try { vid.currentTime = t; } catch (err) { /* ricerca rifiutata: si riprova al frame dopo */ }
+        const nFrames = Math.max(1, Math.round(dur * REF_FPS));
+        const idx = Math.round(clamp01(p / V_END) * (nFrames - 1));
+        if (idx !== lastFrame && !vid.seeking) {
+          lastFrame = idx;
+          try {
+            vid.currentTime = Math.min(dur - 1e-3, (idx + 0.5) / REF_FPS);
+          } catch (err) { lastFrame = -1; /* rifiutata: si riprova al frame dopo */ }
         }
       }
 
@@ -908,7 +944,19 @@
         if (hint) gsap.to(hint, { opacity: 0, duration: 0.5, ease: 'power2.out' });
       }
 
-      /* 5 — fine corsa: l'intro esce di scena e la pagina torna pulita.
+      /* 5 — risorse.
+         Fino a metà corsa il filmato copre tutto: la scena 3D resta spenta e
+         il nastro scorrevole fermo, e tutto il tempo macchina va al decoder.
+         Da metà in poi si riaccende ogni cosa, con largo anticipo sul
+         raccordo, così alla consegna la sfera sta già girando. */
+      const live = p >= 0.5;
+      if (live !== glGate) {
+        glGate = live;
+        document.documentElement.classList.toggle('intro-idle', !live);
+        if (marqueeTween) live ? marqueeTween.play() : marqueeTween.pause();
+      }
+
+      /* 6 — fine corsa: l'intro esce di scena e la pagina torna pulita.
          Reversibile, perché si può sempre risalire. */
       const shouldEnd = p >= 0.999;
       if (shouldEnd !== done) {
@@ -1011,6 +1059,9 @@
   /* Rimette il sito com'era: usata sia quando l'intro non è supportata sia
      quando il video non si carica. */
   function disableIntro() {
+    glGate = true;
+    if (marqueeTween) marqueeTween.play();
+    document.documentElement.classList.remove('intro-idle');
     document.documentElement.classList.remove('has-intro');
     document.documentElement.style.removeProperty('--intro-scroll');
     if (introEl) introEl.style.display = 'none';
@@ -1198,6 +1249,8 @@
      chiude senza salti.
      =========================================================================== */
 
+  let marqueeTween = null;   // messo in pausa durante l'intro, vedi apply()
+
   function marquee() {
     const track = document.getElementById('marqueeTrack');
     if (!track) return;
@@ -1207,7 +1260,7 @@
     for (let i = 0; i < 3; i++) track.appendChild(span.cloneNode(true));
 
     if (!hasGSAP || reduced) return;
-    gsap.to(track, { xPercent: -25, duration: 26, ease: 'none', repeat: -1 });
+    marqueeTween = gsap.to(track, { xPercent: -25, duration: 26, ease: 'none', repeat: -1 });
   }
 
   /* ===========================================================================

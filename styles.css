@@ -234,6 +234,11 @@ html.has-intro .intro.is-done{ display:none; }
   transform:translateZ(0);
 }
 
+/* Prima metà dell'intro: il filmato copre tutto lo schermo, quindi la grana
+   animata e qualunque altro movimento della pagina sono lavoro sprecato che
+   ruba fotogrammi al video. Si fermano finché non serve rivederli. */
+html.intro-idle .grain{ animation:none; }
+
 /* Copre la fascia alta del filmato (la nav) quando lo schermo non ha le
    proporzioni del video. Vive DENTRO lo stage, quindi riceve la stessa
    trasformazione del quadro e resta incollata al fotogramma. left/width
