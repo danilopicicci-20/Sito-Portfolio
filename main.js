@@ -134,15 +134,31 @@
     }
   };
 
-  /* Fino a 480px vale il layout mobile del CSS: è quello che il filmato del
-     telefono riproduce, quindi è lì — e solo lì — che ha senso mostrarlo.
-     Fra 481 e 899px (tablet, finestre strette) non corrisponde nessuno dei due
-     layout: si mostra il laptop, nella sua versione alleggerita, e lo scambio
-     viene allungato invece di essere allineato al pixel. */
+  /* Quale filmato mostrare.
+
+     Guardare solo la larghezza non basta, ed è l'errore che teneva il laptop
+     in mano a chi apriva il sito dal telefono: con "Richiedi sito desktop"
+     attivo Safari dichiara quasi mille pixel, e un confronto numerico lo
+     scambia per un computer. Lo stesso vale per la larghezza di una finestra
+     desktop stretta, che non è affatto un telefono.
+
+     Si guarda quindi al DISPOSITIVO: dito al posto del mouse (niente hover,
+     puntatore grosso) e schermo più alto che largo. Chi soddisfa entrambe le
+     condizioni ha un telefono in mano, qualunque numero dichiari. */
+  const isTouch    = matchMedia('(hover: none)').matches ||
+                     matchMedia('(pointer: coarse)').matches;
+  const isPortrait = innerHeight >= innerWidth;
+  const usePhone   = isTouch && isPortrait;
+
+  /* `layout` dice a quale impaginazione del CSS appartiene questo filmato.
+     Serve a computeMatch: il raccordo al pixel ha senso solo se la pagina
+     sotto è impaginata come quella ripresa nel video. Se le due cose non
+     coincidono si rinuncia all'allineamento e si allunga lo scambio. */
   const ref =
-      innerWidth <= 480 ? REF.telefono
-    : innerWidth <  900 ? Object.assign({}, REF.laptop, { src: 'assets/video/intro-mobile.mp4' })
-    :                     REF.laptop;
+      usePhone          ? Object.assign({ layout: 'telefono' }, REF.telefono)
+    : innerWidth <  900 ? Object.assign({ layout: 'laptop' }, REF.laptop,
+                                        { src: 'assets/video/intro-mobile.mp4' })
+    :                     Object.assign({ layout: 'laptop' }, REF.laptop);
 
   /* Su un dispositivo con poca memoria l'intro chiederebbe di decodificare un
      video mentre gira una scena WebGL: meglio non proporla affatto che
@@ -817,12 +833,16 @@
       const title = document.querySelector('.hero__title');
       const off   = { k: 1, tx: 0, ty: 0, sphere: 1, maskY: 0, mask: false, fitted: false };
 
-      /* Il raccordo si calcola solo dove il layout della pagina corrisponde a
-         quello del filmato in corso: da 900px in su per il laptop, fino a
-         480px per il telefono. Nella fascia in mezzo non corrisponde nessuno
-         dei due, e forzare un allineamento peggiorerebbe le cose: lì si resta
-         sul quadro pieno e si allunga lo scambio. */
-      if (!meta || !title || (vw > 480 && vw < 900)) return off;
+      /* Il raccordo al pixel si calcola solo se la pagina qui sotto è
+         impaginata come quella ripresa nel filmato in corso: il layout mobile
+         del CSS (fino a 480px) per il video del telefono, quello pieno (da
+         900px) per il laptop. Altrimenti allineare due composizioni diverse
+         peggiorerebbe le cose: si resta sul quadro pieno e si allunga lo
+         scambio, che è il ramo `fitted:false`. */
+      const phoneLayout = matchMedia('(max-width: 480px)').matches;
+      const layoutOk = ref.layout === 'telefono' ? phoneLayout
+                                                 : (!phoneLayout && vw >= 900);
+      if (!meta || !title || !layoutOk) return off;
 
       const m = meta.getBoundingClientRect();
       const t = title.getBoundingClientRect();
