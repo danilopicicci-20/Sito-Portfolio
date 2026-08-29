@@ -253,8 +253,10 @@ html.intro-idle .grain{ animation:none; }
   pointer-events:none;
 }
 
-/* Invito allo scroll: senza, davanti a un laptop immobile si resta fermi.
-   Sparisce al primo movimento e non torna più. */
+/* Invito allo scroll: senza, davanti a un dispositivo immobile si resta
+   fermi. Si dissolve al primo movimento e riappare se si risale fino al
+   fotogramma di partenza — è di nuovo il primo fotogramma, quindi torna a
+   essere vero l'invito a scorrere (gestito in JS, sezione 3b). */
 .intro__hint{
   position:absolute; left:50%; bottom:clamp(28px,5vh,54px);
   transform:translateX(-50%);

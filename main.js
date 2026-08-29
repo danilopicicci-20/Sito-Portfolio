@@ -124,13 +124,18 @@
     },
     telefono: {
       src:     'assets/video/intro-phone.mp4',
-      titleTL: [ 499, 212],
-      titleBR: [ 780, 398],
+      // titleBR corretto: la misura precedente (780) aveva preso per errore
+      // la larghezza del filetto sottostante invece di quella del titolo —
+      // il titolo vero è largo quanto la riga "siti web che", non quanto il
+      // filetto, che si estende oltre. Verificato riga per riga sul nuovo
+      // fotogramma finale, identico a quello del video precedente.
+      titleTL: [ 500, 216],
+      titleBR: [ 683, 396],
       ruleL:   [ 499, 464],
       ruleR:   [ 780, 464],
-      mark:    [509.5, 58.5],
+      mark:    [509.0, 58.5],
       topBand: 96,
-      vEnd:    0.90
+      vEnd:    0.93            // qui il nuovo filmato si è già fermato
     }
   };
 
@@ -838,7 +843,7 @@
     let introPx = 0;
     let match   = { k: 1, tx: 0, ty: 0, sphere: 1, mask: false, maskY: 0 };
     let done    = false;
-    let hintOff = false;
+    let hintShown = true;   // stato del "Scorri per entrare": reversibile, vedi apply()
     let lastFrame = -1;   // ultimo fotogramma richiesto al decoder
 
     /* --- quanto scroll dura l'intro ---
@@ -1054,9 +1059,16 @@
          come l'invito a proseguire, non come un pezzo che spunta. */
       if (cue) cue.style.opacity = String(seg(p, 0.965, 1));
 
-      if (!hintOff && p > 0.012) {
-        hintOff = true;
-        if (hint) gsap.to(hint, { opacity: 0, duration: 0.5, ease: 'power2.out' });
+      /* Reversibile, non un one-shot: al primo movimento si dissolve, ma se si
+         risale fino a tornare al fotogramma di partenza deve trovarsi lì di
+         nuovo — è di nuovo il primo fotogramma, quindi è di nuovo vero
+         l'invito a scorrere. hintShown tiene lo stato per non ripetere lo
+         stesso tween a ogni chiamata mentre si sta dalla stessa parte della
+         soglia. */
+      const hintShouldShow = p <= 0.012;
+      if (hint && hintShouldShow !== hintShown) {
+        hintShown = hintShouldShow;
+        gsap.to(hint, { opacity: hintShouldShow ? 1 : 0, duration: 0.5, ease: 'power2.out' });
       }
 
       /* 5 — risorse.
