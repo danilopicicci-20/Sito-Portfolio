@@ -174,6 +174,34 @@
     // solo il filmato del telefono e il desktop solo quello del laptop.
     introVideo.src = ref.src;
     introVideo.load();
+    primeVideo(introVideo);
+  }
+
+  /* Sblocco del buffer — è questo il punto in cui iOS si comporta come nessun
+     altro, ed è il motivo per cui l'intro poteva non partire affatto su
+     iPhone mentre funzionava ovunque.
+
+     Safari su iOS non scarica i dati di un video finché la riproduzione non è
+     partita almeno una volta: preload="auto" lì vale in pratica "metadata", e
+     readyState si ferma a 1. Uno scrubbing che aspetta di avere i fotogrammi
+     prima di cercare non parte mai, la rete di sicurezza scatta e l'intro
+     sparisce — cioè esattamente "il sito di sempre".
+
+     Un play() seguito immediatamente da pause() risolve: è permesso senza un
+     gesto dell'utente proprio perché il video è muted e playsinline, non si
+     vede muovere nulla, e da quel momento il buffer si riempie. Se il browser
+     lo rifiuta comunque, si riprova al primo tocco. */
+  function primeVideo(v) {
+    const kick = () => {
+      try {
+        const p = v.play();
+        if (p && typeof p.then === 'function') p.then(() => v.pause()).catch(() => {});
+        else v.pause();
+      } catch (err) { /* riproveremo al primo tocco */ }
+    };
+    kick();
+    addEventListener('touchstart',  kick, { once: true, passive: true });
+    addEventListener('pointerdown', kick, { once: true, passive: true });
   }
 
   // Pixel di scroll consumati dall'intro. Tutto ciò che ragiona in "quanto
@@ -931,7 +959,10 @@
          · non si chiede nulla mentre `seeking` è true. Accodare ricerche a
            un decoder che sta già cercando è il modo più rapido per farlo
            singhiozzare. */
-      if (vid.readyState >= 2) {
+      /* Basta avere i metadati (readyState 1): assegnare currentTime scatena
+         comunque il recupero del pezzo di file che serve, e il fotogramma
+         arriva. Pretendere readyState 2 significava, su iOS, non cercare mai. */
+      if (vid.readyState >= 1) {
         const nFrames = Math.max(1, Math.round(dur * REF_FPS));
         const idx = Math.round(clamp01(p / V_END) * (nFrames - 1));
         if (idx !== lastFrame && !vid.seeking) {
@@ -1095,14 +1126,18 @@
 
     // Se il file non arriva proprio, meglio un sito senza intro che un sito
     // con dieci schermate di nero.
+    /* Rete di sicurezza. La condizione è "nemmeno i metadati": con quelli lo
+       scrubbing funziona, quindi rinunciare a readyState 1 sarebbe stato un
+       falso allarme — ed era proprio il falso allarme che su iPhone spegneva
+       un'intro perfettamente funzionante. */
     setTimeout(() => {
-      if (vid.readyState >= 2) return;
+      if (vid.readyState >= 1) return;
       if (st) st.kill();
       tween.kill();
       if (cue) cue.style.opacity = '';
       scrollTo(0, 0);            // la hero si accorcia: meglio ripartire da capo
       disableIntro();
-    }, 9000);
+    }, 12000);
 
     // Il logo della nav punta a #top, che con l'intro coincide con l'inizio
     // del filmato: cliccandolo si tornerebbe al laptop. Deve invece riportare
@@ -1469,7 +1504,59 @@
      10. BOOT
      =========================================================================== */
 
+  /* Pannello di diagnosi, attivo SOLO aprendo il sito con ?diag=1 in coda
+     all'indirizzo. Su un telefono non esiste una console da guardare: questo
+     mette a schermo, in chiaro, tutte le condizioni che decidono se l'intro
+     parte e quale filmato usa. Una fotografia dello schermo basta a capire
+     quale ha detto no. Non costa nulla a chi non lo apre: senza il parametro
+     la funzione esce alla prima riga. */
+  function introDiag() {
+    if (!/[?&]diag=1(&|$)/.test(location.search)) return;
+
+    const v = introVideo;
+    const righe = [
+      ['schermo',        () => innerWidth + '×' + innerHeight],
+      ['touch',          () => isTouch],
+      ['verticale',      () => isPortrait],
+      ['-> filmato',     () => ref.src.split('/').pop()],
+      ['meno movimento', () => reduced],
+      ['risparmio dati', () => (netInfo ? !!netInfo.saveData : 'n/d')],
+      ['memoria GB',     () => (navigator.deviceMemory || 'n/d')],
+      ['GSAP',           () => hasGSAP],
+      ['ScrollTrigger',  () => hasST],
+      ['INTRO ATTIVA',   () => introOn],
+      ['corsa intro',    () => document.documentElement.style
+                                 .getPropertyValue('--intro-scroll') || '(vuota)'],
+      ['video pronto',   () => (v ? v.readyState : 'n/d')],
+      ['video errore',   () => (v && v.error ? v.error.code : 'no')],
+      ['secondo video',  () => (v ? v.currentTime.toFixed(2) : 'n/d')]
+    ];
+
+    const box = document.createElement('div');
+    const s = box.style;
+    s.position = 'fixed'; s.left = '8px'; s.top = '8px'; s.zIndex = '99999';
+    s.background = 'rgba(0,0,0,.92)'; s.color = '#7CFFB2';
+    s.font = '11px/1.45 ui-monospace, monospace';
+    s.padding = '10px 12px'; s.borderRadius = '8px';
+    s.whiteSpace = 'pre'; s.pointerEvents = 'none';
+    s.border = '1px solid rgba(124,255,178,.35)';
+
+    const disegna = () => {
+      let t = '';
+      for (const [k, val] of righe) {
+        let v2;
+        try { v2 = String(val()); } catch (err) { v2 = 'errore'; }
+        t += (k + '               ').slice(0, 15) + ' ' + v2 + '\n';
+      }
+      box.textContent = t.trimEnd();
+    };
+    disegna();
+    setInterval(disegna, 400);
+    document.body.appendChild(box);
+  }
+
   function boot() {
+    introDiag();
     // I wrapper di testo dell'intro vanno preparati PRIMA che il preloader
     // sparisca: così il CSS può tenerli nascosti fin dal primo fotogramma e
     // non c'è mai un istante in cui si vede il testo grezzo fuori posizione.
