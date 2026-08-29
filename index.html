@@ -429,13 +429,22 @@
       <!-- L'H1 è il segnale on-page più pesante dopo il title. "siti web" per
            esteso costa una parola e vale molto: "siti" da solo non intercetta
            nessuna ricerca reale. Il ritmo delle tre righe resta identico. -->
+      <!-- I due filmati d'intro mostrano la stessa frase raggruppata in modo
+           diverso: sul laptop "che" apre la seconda riga, sul telefono chiude
+           la prima. Invece di duplicare l'H1 (due <h1> sarebbero un errore
+           semantico e un danno SEO) la parola esiste in due punti e ne viene
+           renderizzata sempre e solo una: l'altra è display:none, quindi non
+           finisce né nel testo letto dai lettori di schermo né nell'indice.
+           I <br class="brk-m"> valgono lo stesso: invisibili sul desktop,
+           impongono su telefono gli stessi ritorni a capo del filmato, senza
+           dipendere da come il testo andrebbe a capo da solo. -->
       <h1 class="hero__title">
-        <span class="line">Costruisco siti web</span>
-        <span class="line">che <em>si muovono</em></span>
-        <span class="line">e restano impressi.</span>
+        <span class="line">Costruisco<br class="brk-m"> siti web<span class="che-m"> che</span></span>
+        <span class="line"><span class="che-d">che </span><em>si muovono</em></span>
+        <span class="line">e restano<br class="brk-m"> impressi.</span>
       </h1>
       <div class="hero__meta">
-        <p class="hero__sub" data-split>Design e sviluppo su misura: animazioni fluide, 3D interattivo, performance reali. Questo sito è una dimostrazione — il tuo può essere ancora meglio.</p>
+        <p class="hero__sub" data-split>Design e sviluppo su misura: animazioni fluide, 3D interattivo, performance reali. Questo sito è una dimostrazione — il tuo può essere il prossimo.</p>
       </div>
     </div>
     <div class="hero__scroll">

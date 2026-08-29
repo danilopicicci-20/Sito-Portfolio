@@ -99,6 +99,51 @@
   const introVideo = document.getElementById('introVideo');
   const netInfo    = navigator.connection;
 
+  /* --- I due filmati d'intro, e le misure prese sul loro ultimo fotogramma ---
+
+     Sono entrambi 1280×720, ma inquadrano cose diverse. Quello del laptop
+     mostra la pagina a tutto schermo. Quello del telefono la mostra dentro il
+     display, in una finestra verticale al centro del fotogramma — e non è un
+     ostacolo, è un colpo di fortuna: object-fit:cover su uno schermo verticale
+     ritaglia esattamente quella finestra (su 390×844 il ritaglio cade fra i
+     pixel 473 e 806, cioè proprio i bordi del display), quindi lo schermo del
+     telefono nel filmato finisce sovrapposto al viewport reale quasi da solo.
+
+     Tutte le coordinate sono in pixel del video. Sono state misurate sul
+     fotogramma finale, non stimate. */
+  const REF = {
+    laptop: {
+      src:     'assets/video/intro-desktop.mp4',
+      titleTL: [  60, 283],   // angoli del blocco titolo
+      titleBR: [1220, 572],
+      ruleL:   [  60, 615],   // estremi del filetto sopra il sottotitolo
+      ruleR:   [1220, 615],
+      mark:    [ 71.5, 71.5], // centro del logo nella nav
+      topBand: 118,           // sotto questa quota inizia il brandmark
+      vEnd:    0.88           // qui il filmato è all'ultimo fotogramma
+    },
+    telefono: {
+      src:     'assets/video/intro-phone.mp4',
+      titleTL: [ 499, 212],
+      titleBR: [ 780, 398],
+      ruleL:   [ 499, 464],
+      ruleR:   [ 780, 464],
+      mark:    [509.5, 58.5],
+      topBand: 96,
+      vEnd:    0.90
+    }
+  };
+
+  /* Fino a 480px vale il layout mobile del CSS: è quello che il filmato del
+     telefono riproduce, quindi è lì — e solo lì — che ha senso mostrarlo.
+     Fra 481 e 899px (tablet, finestre strette) non corrisponde nessuno dei due
+     layout: si mostra il laptop, nella sua versione alleggerita, e lo scambio
+     viene allungato invece di essere allineato al pixel. */
+  const ref =
+      innerWidth <= 480 ? REF.telefono
+    : innerWidth <  900 ? Object.assign({}, REF.laptop, { src: 'assets/video/intro-mobile.mp4' })
+    :                     REF.laptop;
+
   /* Su un dispositivo con poca memoria l'intro chiederebbe di decodificare un
      video mentre gira una scena WebGL: meglio non proporla affatto che
      proporla a scatti. Stessa logica del risparmio dati. */
@@ -109,11 +154,9 @@
 
   if (introOn) {
     document.documentElement.classList.add('has-intro');
-    // Il file scelto qui, e non con più <source>: il telefono non deve
-    // nemmeno iniziare a scaricare la versione da 3,5 MB.
-    introVideo.src = innerWidth < 900
-      ? 'assets/video/intro-mobile.mp4'
-      : 'assets/video/intro-desktop.mp4';
+    // Il file scelto qui, e non con più <source>: così il telefono scarica
+    // solo il filmato del telefono e il desktop solo quello del laptop.
+    introVideo.src = ref.src;
     introVideo.load();
   }
 
@@ -681,12 +724,6 @@
      =========================================================================== */
 
   const REF_W = 1280, REF_H = 720;
-  const REF_TITLE_TL = [  60, 283];   // angolo alto-sinistro del blocco titolo
-  const REF_TITLE_BR = [1220, 572];   // angolo basso-destro
-  const REF_RULE_L   = [  60, 615];   // estremi del filetto sopra il sottotitolo
-  const REF_RULE_R   = [1220, 615];
-  const REF_MARK     = [ 71.5, 71.5]; // centro del logo nella nav
-  const REF_TOPBAND  = 118;           // sotto questa quota inizia il brandmark
 
   /* Il filmato è a 30 fps esatti. Serve saperlo: cercare un istante qualunque
      dentro un fotogramma costringe il decoder a lavorare per poi mostrare
@@ -697,10 +734,10 @@
   const REF_FPS = 30;
 
   /* Tappe della corsa dell'intro, in frazione (0..1).
-     Il video arriva all'ultimo fotogramma a V_END e da lì resta fermo: gli
-     ultimi ~17 fotogrammi sono già un'immagine statica (la camera ha finito
+     Il video arriva all'ultimo fotogramma a ref.vEnd e da lì resta fermo: la
+     coda di entrambi i filmati è già un'immagine statica (la camera ha finito
      di entrare), ed è su quell'immagine ferma che si costruisce il raccordo. */
-  const V_END  = 0.88;                  // fine del filmato
+  const V_END  = ref.vEnd;              // fine del filmato
   /* SET_A cade dove il filmato sta ancora rallentando (~6,5 s): l'allineamento
      comincia dentro il movimento del video invece che dopo, e per questo si
      legge come la fine della corsa della camera e non come una correzione. */
@@ -778,12 +815,14 @@
 
       const meta  = document.querySelector('.hero__meta');
       const title = document.querySelector('.hero__title');
-      const off   = { k: 1, tx: 0, ty: 0, sphere: 1, maskY: 0, mask: false };
+      const off   = { k: 1, tx: 0, ty: 0, sphere: 1, maskY: 0, mask: false, fitted: false };
 
-      // Sotto i 900px il layout non è più quello del filmato (nav ridotta,
-      // tipografia su un'altra scala): un raccordo geometrico non avrebbe
-      // senso, e forzarlo peggiorerebbe le cose. Lì si resta sul quadro pieno.
-      if (!meta || !title || vw < 900) return off;
+      /* Il raccordo si calcola solo dove il layout della pagina corrisponde a
+         quello del filmato in corso: da 900px in su per il laptop, fino a
+         480px per il telefono. Nella fascia in mezzo non corrisponde nessuno
+         dei due, e forzare un allineamento peggiorerebbe le cose: lì si resta
+         sul quadro pieno e si allunga lo scambio. */
+      if (!meta || !title || (vw > 480 && vw < 900)) return off;
 
       const m = meta.getBoundingClientRect();
       const t = title.getBoundingClientRect();
@@ -794,10 +833,10 @@
          l'occhio usa davvero come riferimento. Se combacia lui, combacia la
          scena; se sacrificassi lui per far quadrare i dettagli, si vedrebbe. */
       const pts = [
-        [toScreen(REF_TITLE_TL), [t.left,  t.top],    5],
-        [toScreen(REF_TITLE_BR), [t.right, t.bottom], 5],
-        [toScreen(REF_RULE_L),   [m.left,  m.top],    1],
-        [toScreen(REF_RULE_R),   [m.right, m.top],    1]
+        [toScreen(ref.titleTL), [t.left,  t.top],    5],
+        [toScreen(ref.titleBR), [t.right, t.bottom], 5],
+        [toScreen(ref.ruleL),   [m.left,  m.top],    1],
+        [toScreen(ref.ruleR),   [m.right, m.top],    1]
       ];
 
       let W = 0, ax = 0, ay = 0, bx = 0, by = 0;
@@ -832,12 +871,12 @@
       const markEl = document.querySelector('.nav__mark');
       if (markEl) {
         const r = markEl.getBoundingClientRect();
-        const a = toScreen(REF_MARK);
+        const a = toScreen(ref.mark);
         const dx = k * a[0] + tx - (r.left + r.width / 2);
         const dy = k * a[1] + ty - (r.top + r.height / 2);
         if (Math.hypot(dx, dy) > 14) {
           mask  = true;
-          maskY = Math.max(0, vh / 2 + (REF_TOPBAND - REF_H / 2) * s0);
+          maskY = Math.max(0, vh / 2 + (ref.topBand - REF_H / 2) * s0);
         }
       }
 
@@ -850,7 +889,7 @@
          l'ultimo tratto di camera, invece di saltare. */
       const sphere = (REF_H * s0 * k) / vh;
 
-      return { k, tx, ty, sphere, mask, maskY };
+      return { k, tx, ty, sphere, mask, maskY, fitted: true };
     }
 
     /* Disegna lo stato corrispondente a una posizione `p` (0..1) della corsa.
@@ -925,12 +964,13 @@
       }
 
       /* 4 — lo scambio vero e proprio.
-         Su schermo stretto il raccordo geometrico non c'è (layout diverso da
-         quello del filmato): lo scambio viene allungato, così il passaggio è
-         un arrivo morbido invece di uno stacco. */
-      const wide = innerWidth >= 900;
-      intro.style.opacity = String(1 - seg(p, wide ? FADE_A : 0.84,
-                                              wide ? FADE_B : 0.99));
+         Quando il raccordo geometrico c'è (laptop su schermo largo, telefono
+         sotto i 480px) i due strati sono già sovrapposti e lo scambio può
+         essere breve. Quando non c'è — la fascia di larghezze in mezzo, dove
+         il layout non corrisponde a nessuno dei due filmati — viene allungato,
+         così il passaggio è un arrivo morbido invece di uno stacco. */
+      intro.style.opacity = String(1 - seg(p, match.fitted ? FADE_A : 0.84,
+                                              match.fitted ? FADE_B : 0.99));
 
       /* L'indicatore "Scorri" nell'ultimo fotogramma del filmato non c'è: il
          quadro del video si ferma poco sopra. Farlo comparire insieme allo

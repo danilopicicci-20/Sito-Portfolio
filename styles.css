@@ -480,6 +480,15 @@ html.has-intro #scene{ transform-origin:0 0; }
 }
 .hero__title .line{ display:block; overflow:hidden; }
 .hero__title .line > span{ display:block; }
+
+/* Varianti di impaginazione del titolo. Sul desktop vale la versione "d",
+   su telefono la "m": in ogni momento una sola delle due è nel documento,
+   l'altra è display:none e quindi non esiste per nessuno.
+   Servono a far combaciare i ritorni a capo con quelli dei due filmati
+   d'intro, che sono stati girati con due raggruppamenti diversi. */
+.brk-m{ display:none; }
+.che-m{ display:none; }
+.che-d{ display:inline; }
 .hero__title em{
   background:linear-gradient(100deg,var(--accent),var(--accent-3));
   -webkit-background-clip:text; background-clip:text; color:transparent;
@@ -911,7 +920,24 @@ html.has-intro #scene{ transform-origin:0 0; }
   .brandmark__word{ font-size:14px; gap:.38em; }
   .brandmark__fluid{ letter-spacing:.28em; margin-right:-.28em; }
   .brandmark__studio{ letter-spacing:.5em; margin-right:-.5em; }
-  .hero__title{ font-size:clamp(32px,11vw,52px); margin-bottom:22px; }
+  /* Impaginazione del titolo come nel filmato del telefono: "che" chiude la
+     prima riga e i ritorni a capo sono imposti, non lasciati al caso. */
+  .brk-m{ display:inline; }
+  .che-m{ display:inline; }
+  .che-d{ display:none; }
+
+  /* Corpo e stacco misurati sull'ultimo fotogramma del filmato, espressi in
+     rapporto alla larghezza del contenuto (100vw meno i due margini da 18px)
+     perché il raccordo tenga su qualunque telefono:
+       corpo   = 0,132 · larghezza contenuto
+       stacco  = 0,235 · larghezza contenuto
+     Rispetto a prima il titolo è circa il 9% più grande e respira molto di
+     più prima del filetto: è così che si presenta nel video, ed è la
+     condizione perché nell'istante dello scambio i due titoli coincidano. */
+  .hero__title{
+    font-size:clamp(34px, calc(13.2vw - 4.8px), 56px);
+    margin-bottom:clamp(28px, calc(23.5vw - 8.5px), 110px);
+  }
   .hero__sub{ font-size:14px; }
   .btn{ font-size:13px; padding:12px 22px; }
   .hero__scroll{ margin-top:28px; font-size:10px; }
