@@ -1,0 +1,76 @@
+##############################################################################
+# Fluids Studio — configurazione per Hostinger (LiteSpeed)
+#
+# Il sito è ospitato su Hostinger, non su Netlify: netlify.toml (che resta nel
+# repo per documentare le intenzioni) non viene letto da questo server. Le
+# stesse regole vanno quindi ripetute qui, nel linguaggio che LiteSpeed capisce
+# davvero — altrimenti restano solo sulla carta.
+#
+# Il problema concreto che questo file risolve: senza direttive esplicite,
+# LiteSpeed applica il proprio default a HTML/CSS/JS — una settimana di cache
+# lato browser. Due browser sullo stesso telefono hanno cache separate: se uno
+# dei due scarica una copia poco prima di un aggiornamento, per giorni continua
+# a mostrare il sito vecchio senza mai richiederlo di nuovo al server, mentre
+# l'altro può già avere la versione nuova. Da fuori sembra "un browser
+# funziona, l'altro no": in realtà nessuno dei due sta più parlando col
+# server, uno dei due sta solo rileggendo cose vecchie che ha in tasca.
+##############################################################################
+
+# ---------------------------------------------------------------------------
+# Cache lato browser
+# ---------------------------------------------------------------------------
+# HTML, CSS e JS non hanno un hash nel nome file: dopo un deploy DEVONO essere
+# ripresi dal server, altrimenti un aggiornamento può restare invisibile a chi
+# ha già visitato il sito per giorni. Font, video e librerie invece cambiano
+# nome se cambia il contenuto (o comunque sono pesanti e stabili): per quelli
+# la cache lunga è corretta e voluta.
+<IfModule mod_expires.c>
+  ExpiresActive On
+
+  ExpiresByType text/html                  "access plus 0 seconds"
+  ExpiresByType application/javascript     "access plus 0 seconds"
+  ExpiresByType text/javascript            "access plus 0 seconds"
+  ExpiresByType text/css                   "access plus 0 seconds"
+
+  ExpiresByType font/woff2                 "access plus 1 year"
+  ExpiresByType video/mp4                  "access plus 1 year"
+  ExpiresByType image/svg+xml              "access plus 1 month"
+  ExpiresByType image/png                  "access plus 1 month"
+  ExpiresByType image/x-icon               "access plus 1 month"
+</IfModule>
+
+<IfModule mod_headers.c>
+  <FilesMatch "\.(html|js|css)$">
+    Header set Cache-Control "public, max-age=0, must-revalidate"
+  </FilesMatch>
+  <FilesMatch "\.(woff2|mp4|svg|png|ico)$">
+    Header set Cache-Control "public, max-age=31536000, immutable"
+  </FilesMatch>
+
+  # --- Header di sicurezza (copia di netlify.toml, in dialetto Apache) ---
+  Header set X-Content-Type-Options "nosniff"
+  Header set X-Frame-Options "DENY"
+  Header set Referrer-Policy "strict-origin-when-cross-origin"
+  Header set Strict-Transport-Security "max-age=31536000; includeSubDomains"
+  Header set Permissions-Policy "accelerometer=(), autoplay=(), camera=(), display-capture=(), encrypted-media=(), fullscreen=(self), geolocation=(), gyroscope=(), magnetometer=(), microphone=(), midi=(), payment=(), usb=(), xr-spatial-tracking=()"
+  Header set Cross-Origin-Opener-Policy "same-origin"
+  Header set Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'self'; manifest-src 'self'; media-src 'self'; object-src 'none'; frame-src 'none'; worker-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; upgrade-insecure-requests"
+</IfModule>
+
+# La cache "a pagina intera" di LiteSpeed è un livello separato da tutto
+# quanto sopra: anche con gli header giusti, se questo modulo è attivo può
+# comunque servire una pagina HTML già pronta senza nemmeno chiedere al PHP
+# (qui non c'è PHP, ma la cache può comunque intercettare la richiesta prima
+# di arrivare a leggere i file). Meglio escluderlo esplicitamente.
+<IfModule LiteSpeed>
+  CacheLookup off
+</IfModule>
+
+# ---------------------------------------------------------------------------
+# HTTPS forzato
+# ---------------------------------------------------------------------------
+<IfModule mod_rewrite.c>
+  RewriteEngine On
+  RewriteCond %{HTTPS} off
+  RewriteRule ^ https://%{HTTP_HOST}%{REQUEST_URI} [L,R=301]
+</IfModule>

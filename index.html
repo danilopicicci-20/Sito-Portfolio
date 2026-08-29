@@ -57,7 +57,15 @@
   <link rel="preload" as="font" type="font/woff2" crossorigin
         href="assets/fonts/instrument-serif-latin-400-italic.woff2" />
 
-  <link rel="stylesheet" href="styles.css" />
+  <!-- ?v=... : a ogni modifica di styles.css o main.js questo numero VA
+       cambiato. Non è decorativo — è la seconda difesa contro la cache, e la
+       più forte delle due: un URL diverso è un file diverso per qualunque
+       browser, qualunque politica di cache stia applicando il server in quel
+       momento (compresa quella troppo lunga che Hostinger applica di
+       default). Senza cambiarlo, l'.htaccess può anche essere corretto e un
+       browser può comunque continuare a rileggersi una copia vecchia se
+       l'aveva già scaricata prima che l'.htaccess entrasse in vigore. -->
+  <link rel="stylesheet" href="styles.css?v=20260829a" />
 
   <!-- =====================================================================
        Dati strutturati (schema.org / JSON-LD)
@@ -847,6 +855,6 @@
      Ora lo carica main.js da solo, a intro finita. Vedi la sezione 9. -->
 <script src="vendor/gsap.min.js" defer></script>
 <script src="vendor/ScrollTrigger.min.js" defer></script>
-<script src="main.js" defer></script>
+<script src="main.js?v=20260829a" defer></script>
 </body>
 </html>
