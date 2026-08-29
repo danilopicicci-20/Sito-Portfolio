@@ -136,19 +136,43 @@
 
   /* Quale filmato mostrare.
 
-     Guardare solo la larghezza non basta, ed è l'errore che teneva il laptop
-     in mano a chi apriva il sito dal telefono: con "Richiedi sito desktop"
-     attivo Safari dichiara quasi mille pixel, e un confronto numerico lo
-     scambia per un computer. Lo stesso vale per la larghezza di una finestra
-     desktop stretta, che non è affatto un telefono.
+     Un solo segnale non basta: Chrome e Safari sullo stesso iPhone hanno
+     mostrato risultati diversi proprio perché ognuno guardava un solo dato,
+     e quel dato può differire fra i due browser anche sullo stesso telefono
+     (un'impostazione per-sito come "Richiedi sito desktop" cambia solo ciò
+     che la PAGINA dichiara — innerWidth, innerHeight — non il dispositivo).
+     Qui si incrociano tre segnali indipendenti, e ne basta uno solido:
 
-     Si guarda quindi al DISPOSITIVO: dito al posto del mouse (niente hover,
-     puntatore grosso) e schermo più alto che largo. Chi soddisfa entrambe le
-     condizioni ha un telefono in mano, qualunque numero dichiari. */
-  const isTouch    = matchMedia('(hover: none)').matches ||
-                     matchMedia('(pointer: coarse)').matches;
-  const isPortrait = innerHeight >= innerWidth;
-  const usePhone   = isTouch && isPortrait;
+     1. lo user-agent dice esplicitamente "telefono". Sia Safari sia Chrome su
+        iOS montano lo stesso motore e dichiarano entrambi "iPhone" in UA:
+        è il segnale che NON cambia mai fra i due browser, qualunque altra
+        impostazione sia attiva.
+     2. lo schermo FISICO (screen.width/height) è più alto che largo. A
+        differenza di innerWidth/innerHeight — il viewport della PAGINA, che
+        "Richiedi sito desktop" può alterare — screen descrive l'hardware e
+        resta quello che è indipendentemente da come la pagina viene chiesta.
+     3. il dito al posto del mouse (niente hover, puntatore grosso), come
+        riserva per i casi in cui lo user-agent non aiuta.
+
+     Un iPad va escluso esplicitamente: da iPadOS 13 si presenta come
+     "Macintosh" ma resta touch, quindi il solo controllo touch+verticale lo
+     scambierebbe per un telefono. */
+  const ua = navigator.userAgent || '';
+  const uaIsPhone   = /iPhone|iPod/.test(ua) || (/Android/.test(ua) && /Mobile/.test(ua));
+  const uaIsTablet  = /iPad/.test(ua) || (/Android/.test(ua) && !/Mobile/.test(ua));
+  const isIpadOS    = navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1;
+
+  const isTouch = matchMedia('(hover: none)').matches ||
+                  matchMedia('(pointer: coarse)').matches ||
+                  (navigator.maxTouchPoints || 0) > 0;
+
+  // Schermo fisico: immune a zoom di pagina e a "richiedi sito desktop".
+  const physW = (screen && screen.width)  || innerWidth;
+  const physH = (screen && screen.height) || innerHeight;
+  const isPortraitPhysical = physH >= physW;
+
+  const usePhone = !uaIsTablet && !isIpadOS && isPortraitPhysical &&
+                   (uaIsPhone || (isTouch && physW <= 500));
 
   /* `layout` dice a quale impaginazione del CSS appartiene questo filmato.
      Serve a computeMatch: il raccordo al pixel ha senso solo se la pagina
