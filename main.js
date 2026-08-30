@@ -142,6 +142,15 @@
       // il titolo vero è largo quanto la riga "siti web che", non quanto il
       // filetto, che si estende oltre. Verificato riga per riga sul nuovo
       // fotogramma finale, identico a quello del video precedente.
+      /* Bordi del DISPLAY nel fotogramma finale, misurati sul profilo di
+         luminosità colonna per colonna: fuori dal vetro si sta sotto 4,
+         dentro si salta a 7,5. Lo schermo va da x 473,5 a x 805,5 — quindi
+         largo 332, centrato a 639,5 su un fotogramma largo 1280 (mezzo pixel
+         dal centro esatto). Verticalmente riempie tutto il fotogramma.
+         Sono QUESTI i riferimenti che contano per l'inquadratura. */
+      screenCX: 639.5,
+      screenHW: 166,
+      // le ancore del testo restano documentate ma non guidano più il quadro
       titleTL: [ 500, 216],
       titleBR: [ 683, 396],
       ruleL:   [ 499, 464],
@@ -824,12 +833,33 @@
      coda di entrambi i filmati è già un'immagine statica (la camera ha finito
      di entrare), ed è su quell'immagine ferma che si costruisce il raccordo. */
   const V_END  = ref.vEnd;              // fine del filmato
-  /* SET_A cade dove il filmato sta ancora rallentando (~6,5 s): l'allineamento
-     comincia dentro il movimento del video invece che dopo, e per questo si
-     legge come la fine della corsa della camera e non come una correzione. */
-  const SET_A  = 0.70, SET_B = 0.92;    // il quadro si allinea alla pagina
-  const FADE_A = 0.92, FADE_B = 0.978;  // scambio degli strati
-  const LIVE_A = 0.92, LIVE_B = 1.00;   // ultimo tratto di corsa della camera
+  /* SET_A cade dove il filmato sta ancora rallentando: la correzione
+     d'inquadratura comincia DENTRO il movimento del video invece che dopo, e
+     per questo si legge come la fine della corsa della camera e non come un
+     aggiustamento. Sulla maggior parte dei telefoni quella correzione è
+     comunque prossima allo zero (il filmato è già inquadrato bene), quindi
+     lì non si vede proprio nulla muoversi. */
+  const SET_A  = 0.70, SET_B = 0.90;    // il quadro si allinea allo schermo
+
+  /* Il passaggio attraverso il vetro.
+     Sul telefono comincia esattamente dove il filmato finisce (ref.vEnd): la
+     camera deve prima entrare del tutto nel display, e SOLO DOPO si
+     attraversa. Farlo partire prima significherebbe dissolvere il video
+     mentre sta ancora avvicinandosi — l'ingresso non si vedrebbe mai.
+     Sul laptop resta breve e leggero, perché lì i due quadri combaciano
+     davvero e più corto è, meno si nota. */
+  const FADE_A = ref.layout === 'telefono' ? ref.vEnd : 0.92;
+  const FADE_B = ref.layout === 'telefono' ? 1.00     : 0.978;
+
+  /* Intensità dell'attraversamento. Sul telefono è un gesto dichiarato,
+     perché lì il sito ripreso nel filmato ha un'altra impaginazione e la
+     sfocatura è ciò che rende quella differenza illeggibile. Sul laptop i
+     due quadri coincidono quasi al pixel: aggiungere spinta e sfocatura
+     rovinerebbe un raccordo che già funziona, quindi restano quasi a zero. */
+  const THRU_PUSH = ref.layout === 'telefono' ? 0.14 : 0.02;
+  const THRU_BLUR = ref.layout === 'telefono' ? 9    : 0;
+  const THRU_ARR  = ref.layout === 'telefono' ? 0.07 : 0.015;
+  const LIVE_A = 0.90, LIVE_B = 1.00;   // ultimo tratto di corsa della camera
   const E_AMP  = 0.012;                 // ampiezza di quell'ultimo tratto
 
   const clamp01  = v => (v < 0 ? 0 : v > 1 ? 1 : v);
@@ -902,6 +932,35 @@
       const meta  = document.querySelector('.hero__meta');
       const title = document.querySelector('.hero__title');
       const off   = { k: 1, tx: 0, ty: 0, sphere: 1, maskY: 0, mask: false, fitted: false };
+
+      /* --- TELEFONO: si ancora allo SCHERMO, non al testo ---------------
+         Qui il filmato inquadra un telefono, e il telefono ha un bordo:
+         un oggetto fisico, netto, misurabile. Ancorarsi a quello significa
+         che la corsa finisce esattamente dentro il display, centrata.
+
+         Ancorarsi invece al testo del sito — come si fa più sotto per il
+         laptop — qui è sbagliato, e i numeri lo dicono: il sito ripreso
+         dentro il filmato ha un'altra impaginazione (il filetto cade al 64%
+         dell'altezza, nella pagina vera al 78%). Inseguendo quel testo la
+         trasformazione diventava k=1,22 con 55px di scarto laterale: il
+         quadro zoomava del 22% in eccesso e usciva dal centro. Il video da
+         solo, senza correzioni, era già a meno di mezzo pixel dal giusto.
+
+         Il conto è diretto: lo schermo occupa mezza larghezza REF_SCREEN_HW
+         attorno a REF_SCREEN_CX, e deve finire largo quanto il viewport. */
+      if (ref.layout === 'telefono' && ref.screenHW) {
+        const kS = (vw / 2) / (ref.screenHW * s0);
+        const cxScreen = toScreen([ref.screenCX, REF_H / 2]);
+        return {
+          k:  kS,
+          tx: vw / 2 - kS * cxScreen[0],
+          ty: vh / 2 - kS * cxScreen[1],
+          // la sfera scala con l'altezza del quadro, come sempre
+          sphere: (REF_H * s0 * kS) / vh,
+          mask: false, maskY: 0,
+          fitted: true
+        };
+      }
 
       /* Il raccordo al pixel si calcola solo se la pagina qui sotto è
          impaginata come quella ripresa nel filmato in corso: il layout mobile
@@ -1038,32 +1097,57 @@
       const cx  = innerWidth / 2, cy = innerHeight / 2;
       const eTx = cx * (1 - e), eTy = cy * (1 - e);
 
-      // video: prima il raccordo, poi la camera condivisa
-      stage.style.transform =
-        'translate(' + (e * mx + eTx).toFixed(2) + 'px,' + (e * my + eTy).toFixed(2) + 'px) ' +
-        'scale(' + (e * mk).toFixed(5) + ')';
+      /* --- il passaggio attraverso il vetro --------------------------------
+         `thru` sale da 0 a 1 nell'ultimo tratto, quello in cui la camera
+         "entra". Non è una dissolvenza: è il gesto di attraversare una
+         superficie. Il filmato continua a spingersi avanti (PUSH) e va fuori
+         fuoco, come quando un obiettivo supera il piano su cui era a fuoco;
+         la pagina vera arriva dall'altra parte assestandosi da poco più
+         vicino. Il fuori fuoco fa un secondo lavoro, altrettanto importante:
+         il sito ripreso nel filmato ha un'impaginazione diversa da quella
+         reale, e la sfocatura rende quella differenza illeggibile proprio
+         nell'istante in cui i due strati si scambiano. */
+      /* smoothstep e non outCubic: quest'ultima è tutta all'inizio, e faceva
+         sparire il filmato nei primi istanti della finestra invece che nel
+         mezzo. Qui serve una curva simmetrica — parte piano, accelera al
+         centro, si posa piano — perché l'attraversamento è un gesto, non una
+         sparizione. */
+      const tRaw  = seg(p, FADE_A, FADE_B);
+      const thru  = tRaw * tRaw * (3 - 2 * tRaw);
+      const push  = 1 + THRU_PUSH * thru;
+      const blur  = (THRU_BLUR * thru).toFixed(2);
 
-      // pagina vera: solo la camera condivisa
-      const pageT = 'translate(' + eTx.toFixed(2) + 'px,' + eTy.toFixed(2) + 'px) scale(' + e.toFixed(5) + ')';
+      // video: raccordo, poi camera condivisa, poi la spinta finale
+      const vk  = e * mk * push;
+      const vTx = push * (e * mx + eTx) + cx * (1 - push);
+      const vTy = push * (e * my + eTy) + cy * (1 - push);
+      stage.style.transform =
+        'translate(' + vTx.toFixed(2) + 'px,' + vTy.toFixed(2) + 'px) scale(' + vk.toFixed(5) + ')';
+      stage.style.filter = (THRU_BLUR && thru > 0) ? 'blur(' + blur + 'px)' : '';
+
+      /* La pagina vera arriva dall'altra parte del vetro: parte un filo più
+         vicina e si assesta mentre il filmato la attraversa. È il movimento
+         che fa leggere lo scambio come "sono entrato", invece che come "è
+         comparso qualcos'altro". */
+      const arrive = 1 + THRU_ARR * (1 - thru);
+      const pk  = e * arrive;
+      const pTx = cx * (1 - pk), pTy = cy * (1 - pk);
+      const pageT = 'translate(' + pTx.toFixed(2) + 'px,' + pTy.toFixed(2) + 'px) scale(' + pk.toFixed(5) + ')';
       stick.style.transform = pageT;
       if (navEl) navEl.style.transform = pageT;
 
-      // sfondo 3D: camera condivisa + assestamento della sfera
+      // sfondo 3D: stesso arrivo della pagina + assestamento della sfera
       if (scene) {
-        const sk = e * (1 + (match.sphere - 1) * (1 - l));
+        const sk = pk * (1 + (match.sphere - 1) * (1 - l));
         scene.style.transform =
           'translate(' + (cx * (1 - sk)).toFixed(2) + 'px,' + (cy * (1 - sk)).toFixed(2) + 'px) ' +
           'scale(' + sk.toFixed(5) + ')';
       }
 
-      /* 4 — lo scambio vero e proprio.
-         Quando il raccordo geometrico c'è (laptop su schermo largo, telefono
-         sotto i 480px) i due strati sono già sovrapposti e lo scambio può
-         essere breve. Quando non c'è — la fascia di larghezze in mezzo, dove
-         il layout non corrisponde a nessuno dei due filmati — viene allungato,
-         così il passaggio è un arrivo morbido invece di uno stacco. */
-      intro.style.opacity = String(1 - seg(p, match.fitted ? FADE_A : 0.84,
-                                              match.fitted ? FADE_B : 0.99));
+      /* 4 — lo scambio. L'opacità segue la STESSA curva della spinta e della
+         sfocatura: il filmato si dissolve mentre attraversa, non prima e non
+         dopo. Un solo gesto, non due eventi sovrapposti. */
+      intro.style.opacity = (1 - thru).toFixed(3);
 
       /* L'indicatore "Scorri" nell'ultimo fotogramma del filmato non c'è: il
          quadro del video si ferma poco sopra. Farlo comparire insieme allo
@@ -1106,6 +1190,9 @@
           stick.style.transform = '';
           if (navEl) navEl.style.transform = '';
           if (scene) scene.style.transform = '';
+          // il filtro va tolto esplicitamente: una blur() dimenticata su un
+          // elemento a schermo intero resta a costare GPU per tutta la visita
+          stage.style.filter = '';
         }
       }
     }
