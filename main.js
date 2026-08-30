@@ -111,9 +111,22 @@
 
      Tutte le coordinate sono in pixel del video. Sono state misurate sul
      fotogramma finale, non stimate. */
+
+  /* Cache-busting per i filmati — bump da fare ogni volta che uno dei tre
+     file viene sostituito TENENDO LO STESSO NOME.
+     I video hanno cache "immutable" di un anno (giusto: di norma non
+     cambiano mai, ed è un file pesante che vale la pena non riscaricare a
+     ogni visita). Ma il giorno in cui il contenuto cambia restando sotto lo
+     stesso nome file, quella stessa cache "immutable" diventa il problema:
+     un browser — o la cache del server, indipendentemente da quella del
+     browser — può continuare a servire il video vecchio per un anno intero
+     senza mai richiederlo di nuovo. È lo stesso bug della cache di main.js
+     scoperto su Safari, spostato sui video. */
+  const VIDEO_V = '20260830a';
+
   const REF = {
     laptop: {
-      src:     'assets/video/intro-desktop.mp4',
+      src:     'assets/video/intro-desktop.mp4?v=' + VIDEO_V,
       titleTL: [  60, 283],   // angoli del blocco titolo
       titleBR: [1220, 572],
       ruleL:   [  60, 615],   // estremi del filetto sopra il sottotitolo
@@ -123,7 +136,7 @@
       vEnd:    0.88           // qui il filmato è all'ultimo fotogramma
     },
     telefono: {
-      src:     'assets/video/intro-phone.mp4',
+      src:     'assets/video/intro-phone.mp4?v=' + VIDEO_V,
       // titleBR corretto: la misura precedente (780) aveva preso per errore
       // la larghezza del filetto sottostante invece di quella del titolo —
       // il titolo vero è largo quanto la riga "siti web che", non quanto il
@@ -186,7 +199,7 @@
   const ref =
       usePhone          ? Object.assign({ layout: 'telefono' }, REF.telefono)
     : innerWidth <  900 ? Object.assign({ layout: 'laptop' }, REF.laptop,
-                                        { src: 'assets/video/intro-mobile.mp4' })
+                                        { src: 'assets/video/intro-mobile.mp4?v=' + VIDEO_V })
     :                     Object.assign({ layout: 'laptop' }, REF.laptop);
 
   /* Su un dispositivo con poca memoria l'intro chiederebbe di decodificare un
