@@ -122,21 +122,28 @@
      browser — può continuare a servire il video vecchio per un anno intero
      senza mai richiederlo di nuovo. È lo stesso bug della cache di main.js
      scoperto su Safari, spostato sui video. */
-  const VIDEO_V = '20260830a';
+  const VIDEO_V = '20260830b';
 
   const REF = {
     laptop: {
       src:     'assets/video/intro-desktop.mp4?v=' + VIDEO_V,
-      titleTL: [  60, 283],   // angoli del blocco titolo
-      titleBR: [1220, 572],
-      ruleL:   [  60, 615],   // estremi del filetto sopra il sottotitolo
-      ruleR:   [1220, 615],
-      mark:    [ 71.5, 71.5], // centro del logo nella nav
-      topBand: 118,           // sotto questa quota inizia il brandmark
+      fw: 856, fh: 482,       // risoluzione di QUESTO filmato
+      /* Il filmato è lo stesso render di prima, riesportato più piccolo: le
+         ancore già validate sono state riportate nello spazio 856×482 e poi
+         ricontrollate sul fotogramma finale. Il logo nav cadeva a 47,8/47,9
+         per calcolo e a 47,5/47,0 per misura, il filetto a 411,7 contro 412:
+         è la stessa inquadratura, a un'altra risoluzione. */
+      titleTL: [  40, 189],   // angoli del blocco titolo
+      titleBR: [ 816, 383],
+      ruleL:   [  40, 412],   // estremi del filetto sopra il sottotitolo
+      ruleR:   [ 816, 412],
+      mark:    [ 47.8, 47.5], // centro del logo nella nav
+      topBand: 79,            // sotto questa quota inizia il brandmark
       vEnd:    0.88           // qui il filmato è all'ultimo fotogramma
     },
     telefono: {
       src:     'assets/video/intro-phone.mp4?v=' + VIDEO_V,
+      fw: 1280, fh: 720,      // risoluzione di QUESTO filmato
       // titleBR corretto: la misura precedente (780) aveva preso per errore
       // la larghezza del filetto sottostante invece di quella del titolo —
       // il titolo vero è largo quanto la riga "siti web che", non quanto il
@@ -208,8 +215,11 @@
      coincidono si rinuncia all'allineamento e si allunga lo scambio. */
   const ref =
       usePhone          ? Object.assign({ layout: 'telefono' }, REF.telefono)
-    : innerWidth <  900 ? Object.assign({ layout: 'laptop' }, REF.laptop,
-                                        { src: 'assets/video/intro-mobile.mp4?v=' + VIDEO_V })
+    /* Fra 481 e 899px si usa lo stesso filmato del laptop: prima esisteva un
+       terzo file alleggerito, ma ora il laptop è già 856×482, cioè la stessa
+       taglia di quella versione ridotta. Tenerne due sarebbe un megabyte in
+       più nel repo per un file identico. */
+    : innerWidth <  900 ? Object.assign({ layout: 'laptop' }, REF.laptop)
     :                     Object.assign({ layout: 'laptop' }, REF.laptop);
 
   /* Su un dispositivo con poca memoria l'intro chiederebbe di decodificare un
@@ -819,7 +829,11 @@
      qui sotto: il filetto sopra il sottotitolo, il logo nella nav, il bottone.
      =========================================================================== */
 
-  const REF_W = 1280, REF_H = 720;
+  /* Dimensioni del fotogramma del filmato in corso. NON è una costante: i due
+     filmati non hanno la stessa risoluzione (il telefono 1280×720, il laptop
+     856×482), e tutte le coordinate di riferimento vivono nello spazio pixel
+     del proprio video. Sbagliare questo numero sposta ogni ancora. */
+  const REF_W = ref.fw, REF_H = ref.fh;
 
   /* Il filmato è a 30 fps esatti. Serve saperlo: cercare un istante qualunque
      dentro un fotogramma costringe il decoder a lavorare per poi mostrare
