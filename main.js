@@ -150,6 +150,7 @@
          Sono QUESTI i riferimenti che contano per l'inquadratura. */
       screenCX: 639.5,
       screenHW: 166,
+      icon:    [518, 121],   // centro dell'icona del brandmark nel filmato
       // le ancore del testo restano documentate ma non guidano più il quadro
       titleTL: [ 500, 216],
       titleBR: [ 683, 396],
@@ -851,14 +852,21 @@
   const FADE_A = ref.layout === 'telefono' ? ref.vEnd : 0.92;
   const FADE_B = ref.layout === 'telefono' ? 1.00     : 0.978;
 
-  /* Intensità dell'attraversamento. Sul telefono è un gesto dichiarato,
-     perché lì il sito ripreso nel filmato ha un'altra impaginazione e la
-     sfocatura è ciò che rende quella differenza illeggibile. Sul laptop i
-     due quadri coincidono quasi al pixel: aggiungere spinta e sfocatura
-     rovinerebbe un raccordo che già funziona, quindi restano quasi a zero. */
-  const THRU_PUSH = ref.layout === 'telefono' ? 0.14 : 0.02;
-  const THRU_BLUR = ref.layout === 'telefono' ? 9    : 0;
-  const THRU_ARR  = ref.layout === 'telefono' ? 0.07 : 0.015;
+  /* Intensità dell'attraversamento.
+     La SPINTA non è più un numero scelto a mano: è la correzione misurata in
+     computeMatch, cioè esattamente il movimento che porta la pagina del
+     filmato su quella vera. Resta da regolare solo quanto si sfoca.
+
+     La sfocatura serve nel mezzo del guado, dove le due composizioni sono
+     ancora a metà strada: lì rende illeggibile la differenza. Sul laptop
+     resta a zero, perché i due quadri già coincidono e sporcare un raccordo
+     che funziona sarebbe un peggioramento.
+
+     L'ARRIVO della pagina va invece quasi azzerato sul telefono: ora è il
+     video ad andare a posarsi sulla pagina, non il contrario. Se si muovessero
+     entrambi, si rincorrerebbero. */
+  const THRU_BLUR = ref.layout === 'telefono' ? 6 : 0;
+  const THRU_ARR  = ref.layout === 'telefono' ? 0 : 0.015;
   const LIVE_A = 0.90, LIVE_B = 1.00;   // ultimo tratto di corsa della camera
   const E_AMP  = 0.012;                 // ampiezza di quell'ultimo tratto
 
@@ -950,16 +958,72 @@
          attorno a REF_SCREEN_CX, e deve finire largo quanto il viewport. */
       if (ref.layout === 'telefono' && ref.screenHW) {
         const kS = (vw / 2) / (ref.screenHW * s0);
-        const cxScreen = toScreen([ref.screenCX, REF_H / 2]);
-        return {
-          k:  kS,
-          tx: vw / 2 - kS * cxScreen[0],
-          ty: vh / 2 - kS * cxScreen[1],
-          // la sfera scala con l'altezza del quadro, come sempre
+        const cS = toScreen([ref.screenCX, REF_H / 2]);
+        const txS = vw / 2 - kS * cS[0];
+        const tyS = vh / 2 - kS * cS[1];
+
+        // porta un punto del filmato nel quadro ancorato al display
+        const S = p => { const a = toScreen(p); return [kS * a[0] + txS, kS * a[1] + tyS]; };
+
+        const out = {
+          k: kS, tx: txS, ty: tyS,
+          ck: 1, ctx: 0, cty: 0,          // correzione d'attraversamento
           sphere: (REF_H * s0 * kS) / vh,
-          mask: false, maskY: 0,
-          fitted: true
+          mask: false, maskY: 0, fitted: true
         };
+
+        /* --- la spinta dentro il vetro, calcolata invece che inventata ---
+
+           Arrivati al display, il testo del filmato e quello della pagina
+           vera non coincidono: il sito ripreso nel video è impaginato più in
+           alto e un po' più piccolo. Invece di spingere avanti di una
+           quantità arbitraria e sperare, si misura ESATTAMENTE la scala e lo
+           scostamento che portano l'uno sull'altro. La camera che entra nello
+           schermo compie così proprio il movimento che serve ad allineare le
+           due pagine: alla consegna sono già sovrapposte.
+
+           Le due ancore sono scelte perché nel video e nel DOM sono lo stesso
+           identico oggetto: il filetto sopra il sottotitolo (che nel DOM è il
+           bordo di .hero__meta, quindi la sua scatola COINCIDE con ciò che si
+           vede) e il centro dell'icona del brandmark.
+
+           Attenzione al tranello, già costato un raccordo sbagliato: NON si
+           possono usare gli angoli del titolo. Sul video quelli sono
+           l'estensione dell'inchiostro, nel DOM sono la scatola del blocco,
+           larga quanto tutta la colonna. Confrontarli dava k=1,22 e cinquanta
+           pixel di sbandamento. */
+        const icoEl = document.querySelector('.brandmark__icon');
+        if (meta && icoEl && ref.icon) {
+          const mb = meta.getBoundingClientRect();
+          const ib = icoEl.getBoundingClientRect();
+          if (mb.width && ib.width) {
+            const pts = [
+              [S(ref.ruleL), [mb.left,  mb.top]],
+              [S(ref.ruleR), [mb.right, mb.top]],
+              [S(ref.icon),  [ib.left + ib.width / 2, ib.top + ib.height / 2]]
+            ];
+            let ax = 0, ay = 0, bx = 0, by = 0;
+            for (const [a, b] of pts) { ax += a[0]; ay += a[1]; bx += b[0]; by += b[1]; }
+            ax /= pts.length; ay /= pts.length; bx /= pts.length; by /= pts.length;
+            let num = 0, den = 0;
+            for (const [a, b] of pts) {
+              const dx = a[0] - ax, dy = a[1] - ay;
+              num += dx * (b[0] - bx) + dy * (b[1] - by);
+              den += dx * dx + dy * dy;
+            }
+            if (den > 1e-6) {
+              const ck = num / den;
+              // guardia: se il conto esce dal ragionevole si rinuncia alla
+              // correzione e resta la sola inquadratura sul display
+              if (ck > 0.8 && ck < 1.4) {
+                out.ck  = ck;
+                out.ctx = bx - ck * ax;
+                out.cty = by - ck * ay;
+              }
+            }
+          }
+        }
+        return out;
       }
 
       /* Il raccordo al pixel si calcola solo se la pagina qui sotto è
@@ -1114,13 +1178,22 @@
          sparizione. */
       const tRaw  = seg(p, FADE_A, FADE_B);
       const thru  = tRaw * tRaw * (3 - 2 * tRaw);
-      const push  = 1 + THRU_PUSH * thru;
       const blur  = (THRU_BLUR * thru).toFixed(2);
 
-      // video: raccordo, poi camera condivisa, poi la spinta finale
-      const vk  = e * mk * push;
-      const vTx = push * (e * mx + eTx) + cx * (1 - push);
-      const vTy = push * (e * my + eTy) + cy * (1 - push);
+      /* La correzione d'attraversamento (match.ck/ctx/cty) è il movimento
+         misurato che porta il testo del filmato su quello della pagina vera.
+         Interpolandola con `thru`, la spinta dentro lo schermo E l'incastro
+         fra le due pagine diventano lo stesso identico gesto: quando il video
+         finisce di dissolversi, le due composizioni sono già sovrapposte.
+         Sul laptop ck vale 1 e queste tre righe non fanno nulla. */
+      const ck  = 1 + ((match.ck || 1) - 1) * thru;
+      const ctx = (match.ctx || 0) * thru;
+      const cty = (match.cty || 0) * thru;
+
+      // video: inquadratura eased, camera condivisa, correzione d'attraversamento
+      const vk  = ck * e * mk;
+      const vTx = ck * (e * mx + eTx) + ctx;
+      const vTy = ck * (e * my + eTy) + cty;
       stage.style.transform =
         'translate(' + vTx.toFixed(2) + 'px,' + vTy.toFixed(2) + 'px) scale(' + vk.toFixed(5) + ')';
       stage.style.filter = (THRU_BLUR && thru > 0) ? 'blur(' + blur + 'px)' : '';
