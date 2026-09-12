@@ -101,9 +101,9 @@
 
   /* --- I due filmati d'intro, e le misure prese sul loro ultimo fotogramma ---
 
-     Sono entrambi 1920×1080 (una coincidenza di questo terzo render, non una
-     regola: main.js legge la risoluzione di ciascuno da REF, non la
-     presuppone), ma inquadrano cose diverse. Quello del laptop
+     Hanno risoluzioni diverse (laptop 2560×1440, telefono 1920×1080: ogni
+     set di coordinate vive nello spazio pixel del proprio filmato) e
+     inquadrano cose diverse. Quello del laptop
      mostra la pagina a tutto schermo. Quello del telefono la mostra dentro il
      display, in una finestra verticale al centro del fotogramma — e non è un
      ostacolo, è un colpo di fortuna: object-fit:cover su uno schermo verticale
@@ -124,37 +124,52 @@
      browser — può continuare a servire il video vecchio per un anno intero
      senza mai richiederlo di nuovo. È lo stesso bug della cache di main.js
      scoperto su Safari, spostato sui video. */
-  const VIDEO_V = '20260912b';
+  const VIDEO_V = '20260912c';
 
   const REF = {
     laptop: {
       src:     'assets/video/intro-desktop.mp4?v=' + VIDEO_V,
-      fw: 1920, fh: 1080,     // risoluzione di QUESTO filmato
-      /* Terzo render dello stesso setup, questa volta consegnato a 3832×2160
-         e qui ridotto a 1920×1080: le ancore già validate sono state
-         riportate nel nuovo spazio (fattore ~2,24 da 856×482) e poi
-         ricontrollate sul fotogramma finale a piena risoluzione — il logo
-         nav cadeva a 214,0/212,9 per calcolo e a 216,6/214,6 per misura, il
-         filetto a 1846,3 contro 1845,5: stessa inquadratura, altra
-         risoluzione, com'era già stato per i render precedenti.
+      fw: 2560, fh: 1440,     // risoluzione di QUESTO filmato
+      /* Terzo render dello stesso setup, consegnato a 3832×2160 e qui ridotto
+         a 2560×1440: le ancore già validate sono state riportate nel nuovo
+         spazio e ricontrollate sul fotogramma finale — il logo nav cade a
+         142,9/141,9 per calcolo e a 144,7/143,1 per misura, il filetto a
+         1230,9 contro 1230: stessa inquadratura, altra risoluzione.
+
+         Perché 2560 e non 1920: a 1920 il filmato si vedeva morbido, e non
+         per la compressione. Su un portatile retina il viewport è 1512×945
+         in CSS ma 3024×1890 in pixel fisici, quindi un filmato 1920 viene
+         ingrandito di 1,58× sul pannello — e questo render è pieno di
+         dettagli sottili (il wordmark a filo di linea, i riflessi di taglio
+         sulla scocca) che sono esattamente ciò che tradisce un
+         ingrandimento. A 2560 quell'ingrandimento scende a 1,18×, e su un
+         monitor 1920 il filmato viene invece RIDOTTO, che è sempre nitido.
+         Prezzo: 6,7MB invece di 4,3.
 
          A differenza dei filmati precedenti, QUESTO non si ferma affatto
          prima della fine: la camera continua ad avvicinarsi fin quasi
          all'ultimissimo fotogramma (lo scarto fra un fotogramma e il
-         successivo resta sopra il rumore di fondo fino al 97-98% della
-         durata). vEnd va quindi tenuto vicino a 1, e — soprattutto — il
-         passaggio al sito vero (FADE_A più sotto) deve scattare esattamente
-         lì e non prima: cominciarlo mentre la camera si vede ancora
-         muovere, come succedeva con la soglia fissa pensata per il render
-         precedente (che invece si fermava all'88%), è la causa più diretta
-         di uno scambio che sembra "saltare" invece che scorrere. */
-      titleTL: [  89.7, 423.5],  // angoli del blocco titolo
-      titleBR: [1830.3, 858.2],
-      ruleL:   [  89.7, 923.2],  // estremi del filetto sopra il sottotitolo
-      ruleR:   [1830.3, 923.2],
-      mark:    [ 107.2, 106.4],  // centro del logo nella nav
-      topBand: 177,              // sotto questa quota inizia il brandmark
-      vEnd:    0.98              // qui il filmato è all'ultimo fotogramma
+         successivo resta sopra il rumore di fondo fino al 98% della durata).
+
+         Attenzione a cosa significa vEnd: NON è "dove il filmato si ferma",
+         è dove l'ULTIMO FOTOGRAMMA cade nella corsa dello scroll. Tutto ciò
+         che resta dopo (1 − vEnd) è il budget di scroll dell'attraversamento,
+         e quel budget deve bastare al movimento che l'attraversamento deve
+         compiere — qui fino a 148px su 1366×768. Con vEnd a 0.98 restava il
+         2% della corsa, cioè una sessantina di pixel di scroll per
+         centocinquanta di movimento: l'immagine si muoveva due volte e mezzo
+         più veloce del dito, ed è così che un raccordo corretto si legge
+         comunque come uno scatto. A 0.94 il rapporto torna intorno a uno a
+         uno. Il filmato arriva in fondo a 0.94 e si ferma lì: il contenuto
+         smette di muoversi a 0,98·0,94 = 0,921, quindi c'è anche una breve
+         coda ferma prima che il guado cominci. */
+      titleTL: [ 119.6,  564.7],  // angoli del blocco titolo
+      titleBR: [2440.4, 1144.3],
+      ruleL:   [ 119.6, 1230.9],  // estremi del filetto sopra il sottotitolo
+      ruleR:   [2440.4, 1230.9],
+      mark:    [ 142.9,  141.9],  // centro del logo nella nav
+      topBand: 236,               // sotto questa quota inizia il brandmark
+      vEnd:    0.94               // qui il filmato è all'ultimo fotogramma
     },
     telefono: {
       src:     'assets/video/intro-phone.mp4?v=' + VIDEO_V,
@@ -224,11 +239,11 @@
      coincidono si rinuncia all'allineamento e si allunga lo scambio. */
   const ref =
       usePhone          ? Object.assign({ layout: 'telefono' }, REF.telefono)
-    /* Fra 481 e 899px si usa lo stesso filmato del laptop: un terzo file
-       alleggerito per questa fascia esiste già come idea in cantiere, non
-       come necessità — a 1920×1080 e ~4,5MB il filmato resta comunque più
-       leggero del peso medio di una pagina con immagini, quindi non è
-       ancora un problema da risolvere. */
+    /* Fra 481 e 899px si usa lo stesso filmato del laptop. Ora che quel file
+       è a 2560×1440 e pesa 6,7MB, un terzo file alleggerito per questa
+       fascia (finestre strette su desktop, tablet in verticale) è la prima
+       cosa da fare se un giorno il peso diventasse un problema: lì lo
+       schermo è piccolo e la risoluzione alta non serve a nessuno. */
     : innerWidth <  900 ? Object.assign({ layout: 'laptop' }, REF.laptop)
     :                     Object.assign({ layout: 'laptop' }, REF.laptop);
 
@@ -840,11 +855,10 @@
      bottone.
      =========================================================================== */
 
-  /* Dimensioni del fotogramma del filmato in corso. NON è una costante: anche
-     se oggi entrambi i filmati sono 1920×1080, ogni set di coordinate di
-     riferimento vive nello spazio pixel del proprio video, e i due potranno
-     tornare a divergere a un prossimo giro di render. Sbagliare questo
-     numero sposta ogni ancora. */
+  /* Dimensioni del fotogramma del filmato in corso. NON è una costante: i due
+     filmati hanno risoluzioni diverse (laptop 2560×1440, telefono 1920×1080)
+     e ogni set di coordinate di riferimento vive nello spazio pixel del
+     proprio video. Sbagliare questo numero sposta ogni ancora. */
   const REF_W = ref.fw, REF_H = ref.fh;
 
   /* Il filmato è a 30 fps esatti. Serve saperlo: cercare un istante qualunque
@@ -863,9 +877,11 @@
   /* SET_A cade dove il filmato sta ancora rallentando: la correzione
      d'inquadratura comincia DENTRO il movimento del video invece che dopo, e
      per questo si legge come la fine della corsa della camera e non come un
-     aggiustamento. Sulla maggior parte dei telefoni quella correzione è
-     comunque prossima allo zero (il filmato è già inquadrato bene), quindi
-     lì non si vede proprio nulla muoversi. */
+     aggiustamento. Su entrambi i layout quella correzione è ormai prossima
+     allo zero — il telefono si ancora al bordo del display, il laptop non
+     tocca affatto il volo (vedi computeMatch) — quindi qui non si vede
+     muovere nulla: questa finestra serve ancora solo a spegnere la fascia
+     alta del filmato dove la nav non combacia. */
   const SET_A  = 0.70, SET_B = 0.90;    // il quadro si allinea allo schermo
 
   /* Il passaggio attraverso il vetro comincia sempre esattamente dove il
@@ -879,25 +895,32 @@
   const FADE_A = ref.vEnd;
   const FADE_B = 1.00;
 
+  /* Il tetto della sfocatura non è l'unico freno: anche la soglia sotto la
+     quale non si sfoca affatto conta. Su 16:9 il raccordo lascia tre pixel di
+     scarto e la formula chiede 0,3px di sfocatura — invisibile, ma un
+     filter:blur() su un elemento a schermo intero è comunque un layer in più
+     da comporre a ogni fotogramma. Sotto mezzo pixel non si accende niente. */
+  const BLUR_MIN = 0.5;
+
   /* Intensità dell'attraversamento.
      La SPINTA non è più un numero scelto a mano: è la correzione misurata in
      computeMatch, cioè esattamente il movimento che porta la pagina del
      filmato su quella vera. Resta da regolare solo quanto si sfoca.
 
      La sfocatura serve nel mezzo del guado, dove le due composizioni sono
-     ancora a metà strada: lì rende illeggibile la differenza. Il laptop non
-     ha un bordo fisico a cui ancorarsi come lo schermo del telefono — il
-     raccordo si affida al testo, quindi resta un'approssimazione — e una
-     sfocatura leggera lo rende sempre pulito anche nei millimetri in cui non
-     coincide esattamente, senza il peso visivo dei 6px usati sul telefono
-     (lì serve di più perché la spinta dentro il vetro è più lunga).
+     ancora a metà strada: lì rende illeggibile la differenza. Sul telefono è
+     un numero fisso perché la spinta dentro il vetro è lunga e lo scarto fra
+     le due impaginazioni è sempre lo stesso; sul laptop no, e il valore lo
+     decide computeMatch misurando quanto scarto resta davvero su QUESTO
+     schermo — zero su 16:9, qualche pixel su 16:10. Sfocare dove non serve
+     sarebbe solo perdere nitidezza.
 
-     L'ARRIVO della pagina resta leggero sul laptop (i due quadri erano già
-     vicini in partenza) e quasi azzerato sul telefono: lì è il video ad
-     andare a posarsi sulla pagina, non il contrario — se si muovessero
-     entrambi, si rincorrerebbero. */
-  const THRU_BLUR = ref.layout === 'telefono' ? 6 : 3;
-  const THRU_ARR  = ref.layout === 'telefono' ? 0 : 0.015;
+     L'ARRIVO della pagina è azzerato su entrambi: ora è il video ad andare a
+     posarsi sulla pagina, non il contrario. Se si muovessero entrambi si
+     rincorrerebbero, e lo scambio tornerebbe a leggersi come due eventi
+     invece che come un gesto solo. */
+  const PHONE_BLUR = 6;
+  const THRU_ARR   = 0;
   const LIVE_A = 0.90, LIVE_B = 1.00;   // ultimo tratto di corsa della camera
   const E_AMP  = 0.012;                 // ampiezza di quell'ultimo tratto
 
@@ -970,7 +993,8 @@
 
       const meta  = document.querySelector('.hero__meta');
       const title = document.querySelector('.hero__title');
-      const off   = { k: 1, tx: 0, ty: 0, sphere: 1, maskY: 0, mask: false, fitted: false };
+      const off   = { k: 1, tx: 0, ty: 0, ck: 1, ctx: 0, cty: 0, blur: 0,
+                      sphere: 1, maskY: 0, mask: false, fitted: false };
 
       /* --- TELEFONO: si ancora allo SCHERMO, non al testo ---------------
          Qui il filmato inquadra un telefono, e il telefono ha un bordo:
@@ -999,6 +1023,7 @@
         const out = {
           k: kS, tx: txS, ty: tyS,
           ck: 1, ctx: 0, cty: 0,          // correzione d'attraversamento
+          blur: PHONE_BLUR,               // qui la spinta è lunga: sfocatura fissa
           sphere: (REF_H * s0 * kS) / vh,
           mask: false, maskY: 0, fitted: true
         };
@@ -1072,11 +1097,42 @@
       const t = title.getBoundingClientRect();
       if (!t.width || !m.width) return off;
 
-      /* Il blocco del titolo pesa 5 e il filetto 1. Non è arbitrario: il
-         titolo occupa da solo quasi metà del quadro ed è l'unica cosa che
-         l'occhio usa davvero come riferimento. Se combacia lui, combacia la
-         scena; se sacrificassi lui per far quadrare i dettagli, si vedrebbe. */
+      /* --- LAPTOP: il volo resta intatto, la differenza si paga nel guado ---
+
+         Il render finisce a pieno quadro — la camera è già entrata del tutto
+         nello schermo — quindi object-fit:cover È già il raccordo giusto:
+         scala 1, scostamento zero. Per questo qui sotto k/tx/ty valgono
+         l'identità e la correzione finisce tutta in ck/ctx/cty, che entra
+         solo durante l'attraversamento: esattamente il meccanismo del
+         telefono.
+
+         Prima invece la stessa similitudine veniva applicata DURANTE il volo
+         (SET_A..SET_B). Misurata sul layout vero del sito valeva k=0,903 e
+         tx=+73px su 1512×945: negli ultimi centesimi di corsa la camera si
+         vedeva allargare del dieci per cento e scivolare di settanta pixel,
+         contro il senso del volo. Il movimento del video non è più suo, e si
+         nota.
+
+         E va detto fino in fondo, perché è il limite vero di questo raccordo
+         sul desktop: quella correzione non poteva riuscire comunque. Il sito
+         ripreso nel filmato è impaginato a 1920×1080; la pagina vera a
+         1512×945 NON è la stessa impaginazione in scala, perché i clamp() del
+         CSS rimpiccioliscono il testo più lentamente del viewport — il
+         riquadro del titolo passa da 1740×437 a 1361×399, cioè da 3,98 a 3,41
+         di rapporto fra i lati. Nessuna scala uniforme sovrappone due
+         riquadri di proporzioni diverse: misurato su cinque risoluzioni, lo
+         scarto migliore ottenibile resta di una trentina di pixel su 16:10 e
+         di novanta su 2560×1440, mentre su 16:9 — le proporzioni per cui il
+         filmato è stato prodotto — scende a tre. Da qui la scelta di pagare
+         quello scarto mentre il video si dissolve (dove diventa movimento) e
+         non mentre lo si guarda volare (dove diventa un errore), e di sfocare
+         in proporzione allo scarto stesso: su 16:9 la sfocatura resta a zero
+         perché non c'è niente da nascondere. */
       const pts = [
+        /* Il blocco del titolo pesa 5 e il filetto 1. Non è arbitrario: il
+           titolo occupa da solo quasi metà del quadro ed è l'unica cosa che
+           l'occhio usa davvero come riferimento — e fra le pesature provate è
+           anche quella che minimizza lo scarto peggiore. */
         [toScreen(ref.titleTL), [t.left,  t.top],    5],
         [toScreen(ref.titleBR), [t.right, t.bottom], 5],
         [toScreen(ref.ruleL),   [m.left,  m.top],    1],
@@ -1095,9 +1151,29 @@
         num += w * (dax * (b[0] - bx) + day * (b[1] - by));
         den += w * (dax * dax + day * day);
       }
-      let k = den > 1e-6 ? num / den : 1;
-      k = Math.min(2, Math.max(0.45, k));       // guardia contro misure assurde
-      const tx = bx - k * ax, ty = by - k * ay;
+      let ck = den > 1e-6 ? num / den : 1;
+      ck = Math.min(1.6, Math.max(0.6, ck));    // guardia contro misure assurde
+      const ctx = bx - ck * ax, cty = by - ck * ay;
+
+      /* Il quadro del video non si tocca: la correzione vive tutta
+         nell'attraversamento. Le tre righe sotto restano per leggibilità di
+         chi legge apply(), dove k/tx/ty e ck/ctx/cty vengono usati insieme. */
+      const k = 1, tx = 0, ty = 0;
+
+      /* Quanto sfocare: giusto quanto serve. Si misura lo scarto che RESTA
+         dopo la correzione sull'ancora peggiore e la sfocatura ne è una
+         frazione, con un tetto. Su uno schermo 16:9 lo scarto è di pochi
+         pixel e la sfocatura viene praticamente zero — il raccordo è già
+         pulito e sporcarlo sarebbe un peggioramento. Su 16:10 arriva a 3-4px,
+         quel tanto che rende illeggibile la differenza fra le due
+         impaginazioni proprio mentre si scambiano. */
+      let worst = 0;
+      for (const [a, b] of pts) {
+        worst = Math.max(worst,
+                         Math.abs(ck * a[0] + ctx - b[0]),
+                         Math.abs(ck * a[1] + cty - b[1]));
+      }
+      const blur = Math.min(5, worst / 10);
 
       /* La nav è il punto in cui questo metodo tocca il proprio limite, ed è
          onesto dirlo: è ancorata in ALTO mentre tutta la hero è ancorata in
@@ -1111,13 +1187,16 @@
          del video si dissolve nel fondo e riappare, un istante dopo, quella
          vera al proprio posto. Due eventi piccoli e scuri al posto di un
          salto di cento pixel. */
+      /* Lo scarto va misurato DOVE la nav dovrà combaciare, cioè a
+         correzione già entrata: alla consegna il quadro è ck/ctx/cty, non
+         l'identità del volo. */
       let mask = false, maskY = 0;
       const markEl = document.querySelector('.nav__mark');
       if (markEl) {
         const r = markEl.getBoundingClientRect();
         const a = toScreen(ref.mark);
-        const dx = k * a[0] + tx - (r.left + r.width / 2);
-        const dy = k * a[1] + ty - (r.top + r.height / 2);
+        const dx = ck * a[0] + ctx - (r.left + r.width / 2);
+        const dy = ck * a[1] + cty - (r.top + r.height / 2);
         if (Math.hypot(dx, dy) > 14) {
           mask  = true;
           maskY = Math.max(0, vh / 2 + (ref.topBand - REF_H / 2) * s0);
@@ -1126,14 +1205,15 @@
 
       /* La sfera merita un conto a parte. Il suo raggio a schermo dipende solo
          dall'altezza del viewport (la camera three.js ha fov verticale): nel
-         filmato vale C·720 pixel-video, nella pagina C·innerHeight. Questo
+         filmato vale C·REF_H pixel-video, nella pagina C·innerHeight. Questo
          rapporto dice di quanto va scalata la scena 3D perché, nell'istante
          dello scambio, sia la STESSA sfera — stesso centro, stesso diametro,
          stessa densità apparente di puntini. Da lì torna a 1 accompagnando
-         l'ultimo tratto di camera, invece di saltare. */
-      const sphere = (REF_H * s0 * k) / vh;
+         l'ultimo tratto di camera, invece di saltare. Si usa ck e non k per
+         la stessa ragione della nav: conta la scala alla consegna. */
+      const sphere = (REF_H * s0 * ck) / vh;
 
-      return { k, tx, ty, sphere, mask, maskY, fitted: true };
+      return { k, tx, ty, ck, ctx, cty, blur, sphere, mask, maskY, fitted: true };
     }
 
     /* Disegna lo stato corrispondente a una posizione `p` (0..1) della corsa.
@@ -1209,7 +1289,8 @@
          sparizione. */
       const tRaw  = seg(p, FADE_A, FADE_B);
       const thru  = tRaw * tRaw * (3 - 2 * tRaw);
-      const blur  = (THRU_BLUR * thru).toFixed(2);
+      const blurA = match.blur || 0;
+      const blur  = (blurA * thru).toFixed(2);
 
       /* La correzione d'attraversamento (match.ck/ctx/cty) è il movimento
          misurato che porta il testo del filmato su quello della pagina vera.
@@ -1227,12 +1308,16 @@
       const vTy = ck * (e * my + eTy) + cty;
       stage.style.transform =
         'translate(' + vTx.toFixed(2) + 'px,' + vTy.toFixed(2) + 'px) scale(' + vk.toFixed(5) + ')';
-      stage.style.filter = (THRU_BLUR && thru > 0) ? 'blur(' + blur + 'px)' : '';
+      stage.style.filter = (blurA >= BLUR_MIN && thru > 0) ? 'blur(' + blur + 'px)' : '';
 
-      /* La pagina vera arriva dall'altra parte del vetro: parte un filo più
-         vicina e si assesta mentre il filmato la attraversa. È il movimento
-         che fa leggere lo scambio come "sono entrato", invece che come "è
-         comparso qualcos'altro". */
+      /* La pagina vera sta ferma sotto il vetro e si muove solo con la camera
+         condivisa (`e`): è il video che le va incontro, non il contrario.
+         THRU_ARR le darebbe una spinta propria — parte un filo più vicina e si
+         assesta mentre il filmato la attraversa — ma a correzione misurata
+         quella spinta diventa un secondo movimento che rincorre il primo, e
+         lo scambio torna a leggersi come due eventi invece che come un gesto
+         solo. Resta a zero, e la riga resta qui perché è il punto in cui
+         andrebbe rimessa se un giorno servisse. */
       const arrive = 1 + THRU_ARR * (1 - thru);
       const pk  = e * arrive;
       const pTx = cx * (1 - pk), pTy = cy * (1 - pk);
