@@ -101,7 +101,8 @@
 
   /* --- I due filmati d'intro, e le misure prese sul loro ultimo fotogramma ---
 
-     Sono entrambi 1280×720, ma inquadrano cose diverse. Quello del laptop
+     Hanno risoluzioni diverse (laptop 856×482, telefono 1920×1080) e
+     inquadrano cose diverse. Quello del laptop
      mostra la pagina a tutto schermo. Quello del telefono la mostra dentro il
      display, in una finestra verticale al centro del fotogramma — e non è un
      ostacolo, è un colpo di fortuna: object-fit:cover su uno schermo verticale
@@ -122,7 +123,7 @@
      browser — può continuare a servire il video vecchio per un anno intero
      senza mai richiederlo di nuovo. È lo stesso bug della cache di main.js
      scoperto su Safari, spostato sui video. */
-  const VIDEO_V = '20260830b';
+  const VIDEO_V = '20260912a';
 
   const REF = {
     laptop: {
@@ -143,29 +144,23 @@
     },
     telefono: {
       src:     'assets/video/intro-phone.mp4?v=' + VIDEO_V,
-      fw: 1280, fh: 720,      // risoluzione di QUESTO filmato
-      // titleBR corretto: la misura precedente (780) aveva preso per errore
-      // la larghezza del filetto sottostante invece di quella del titolo —
-      // il titolo vero è largo quanto la riga "siti web che", non quanto il
-      // filetto, che si estende oltre. Verificato riga per riga sul nuovo
-      // fotogramma finale, identico a quello del video precedente.
-      /* Bordi del DISPLAY nel fotogramma finale, misurati sul profilo di
-         luminosità colonna per colonna: fuori dal vetro si sta sotto 4,
-         dentro si salta a 7,5. Lo schermo va da x 473,5 a x 805,5 — quindi
-         largo 332, centrato a 639,5 su un fotogramma largo 1280 (mezzo pixel
-         dal centro esatto). Verticalmente riempie tutto il fotogramma.
-         Sono QUESTI i riferimenti che contano per l'inquadratura. */
-      screenCX: 639.5,
-      screenHW: 166,
-      icon:    [518, 121],   // centro dell'icona del brandmark nel filmato
+      fw: 1920, fh: 1080,     // risoluzione di QUESTO filmato
+      /* Stesso render di prima, riesportato a 1,5×: i bordi del display, che
+         non dipendono da testo o interpretazione, coincidono con la scala
+         attesa fino al mezzo pixel — sul fotogramma finale lo schermo va da
+         x 710 a x 1209 (atteso 710,25–1208,25 scalando 473,5–805,5 per 1,5).
+         Le altre ancore sono le stesse di prima moltiplicate per 1,5. */
+      screenCX: 959.25,
+      screenHW: 249,
+      icon:    [777.0, 181.5],  // centro dell'icona del brandmark nel filmato
       // le ancore del testo restano documentate ma non guidano più il quadro
-      titleTL: [ 500, 216],
-      titleBR: [ 683, 396],
-      ruleL:   [ 499, 464],
-      ruleR:   [ 780, 464],
-      mark:    [509.0, 58.5],
-      topBand: 96,
-      vEnd:    0.93            // qui il nuovo filmato si è già fermato
+      titleTL: [ 750.0, 324.0],
+      titleBR: [1024.5, 594.0],
+      ruleL:   [ 748.5, 696.0],
+      ruleR:   [1170.0, 696.0],
+      mark:    [763.5,  87.75],
+      topBand: 144,
+      vEnd:    0.97            // qui il nuovo filmato si è già fermato
     }
   };
 
@@ -824,15 +819,17 @@
           lo stesso identico movimento: l'occhio segue il movimento e non si
           accorge della sostituzione.
 
-     Punti di riferimento misurati sul fotogramma finale del filmato, in pixel
-     del video (spazio 1280×720). Sono gli stessi elementi che il DOM espone
-     qui sotto: il filetto sopra il sottotitolo, il logo nella nav, il bottone.
+     Punti di riferimento misurati sul fotogramma finale del filmato, ciascuno
+     nello spazio pixel del proprio video. Sono gli stessi elementi che il DOM
+     espone qui sotto: il filetto sopra il sottotitolo, il logo nella nav, il
+     bottone.
      =========================================================================== */
 
   /* Dimensioni del fotogramma del filmato in corso. NON è una costante: i due
-     filmati non hanno la stessa risoluzione (il telefono 1280×720, il laptop
-     856×482), e tutte le coordinate di riferimento vivono nello spazio pixel
-     del proprio video. Sbagliare questo numero sposta ogni ancora. */
+     filmati non hanno la stessa risoluzione (il telefono 1920×1080, il
+     laptop 856×482), e tutte le coordinate di riferimento vivono nello
+     spazio pixel del proprio video. Sbagliare questo numero sposta ogni
+     ancora. */
   const REF_W = ref.fw, REF_H = ref.fh;
 
   /* Il filmato è a 30 fps esatti. Serve saperlo: cercare un istante qualunque
