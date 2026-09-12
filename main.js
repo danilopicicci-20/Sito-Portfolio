@@ -124,7 +124,7 @@
      browser — può continuare a servire il video vecchio per un anno intero
      senza mai richiederlo di nuovo. È lo stesso bug della cache di main.js
      scoperto su Safari, spostato sui video. */
-  const VIDEO_V = '20260912c';
+  const VIDEO_V = '20260912d';
 
   const REF = {
     laptop: {
@@ -895,12 +895,10 @@
   const FADE_A = ref.vEnd;
   const FADE_B = 1.00;
 
-  /* Il tetto della sfocatura non è l'unico freno: anche la soglia sotto la
-     quale non si sfoca affatto conta. Su 16:9 il raccordo lascia tre pixel di
-     scarto e la formula chiede 0,3px di sfocatura — invisibile, ma un
-     filter:blur() su un elemento a schermo intero è comunque un layer in più
-     da comporre a ogni fotogramma. Sotto mezzo pixel non si accende niente. */
-  const BLUR_MIN = 0.5;
+  /* Sotto questa soglia non si sfoca per niente: una sfocatura che non si
+     vede è solo un layer in più da comporre a ogni fotogramma, nel punto in
+     cui servono tutti i millisecondi disponibili. */
+  const BLUR_MIN = 1.0;
 
   /* Intensità dell'attraversamento.
      La SPINTA non è più un numero scelto a mano: è la correzione misurata in
@@ -922,7 +920,22 @@
   const PHONE_BLUR = 6;
   const THRU_ARR   = 0;
   const LIVE_A = 0.90, LIVE_B = 1.00;   // ultimo tratto di corsa della camera
-  const E_AMP  = 0.012;                 // ampiezza di quell'ultimo tratto
+
+  /* Ampiezza di quell'ultimo tratto: il quadro parte dall'1,2% più piccolo e
+     si posa. Sul telefono è ciò che rende invisibile lo scambio (video e
+     pagina si muovono IDENTICI nell'istante in cui si sostituiscono) e resta.
+
+     Sul laptop invece va a zero, e la ragione è la nitidezza. Una scala di
+     0,988 su un elemento a schermo intero significa che ogni pixel del
+     filmato viene ricampionato per tutta la durata dell'intro: un filo di
+     sfocatura stesa uniformemente su tutto, proprio sul dettaglio fine
+     (il wordmark a filo di linea) che si nota di più. A zero la
+     trasformazione del quadro durante il volo è l'identità esatta —
+     translate(0,0) scale(1) — quindi il filmato viene disegnato pixel per
+     pixel come è stato codificato. Qui se lo può permettere perché il
+     movimento dello scambio ce l'ha già: è la correzione misurata che entra
+     durante l'attraversamento. */
+  const E_AMP  = ref.layout === 'telefono' ? 0.012 : 0;
 
   const clamp01  = v => (v < 0 ? 0 : v > 1 ? 1 : v);
   const seg      = (p, a, b) => clamp01((p - a) / (b - a));
@@ -949,7 +962,28 @@
     let match   = { k: 1, tx: 0, ty: 0, sphere: 1, mask: false, maskY: 0 };
     let done    = false;
     let hintShown = true;   // stato del "Scorri per entrare": reversibile, vedi apply()
-    let lastFrame = -1;   // ultimo fotogramma richiesto al decoder
+    let lastFrame = -1;     // ultimo fotogramma CHIESTO al decoder
+    let wantFrame = -1;     // ultimo fotogramma VOLUTO dallo scroll
+    let lastStageT = '', lastPageT = '', lastSceneT = '';
+
+    /* --- il fotogramma chiesto al decoder ---
+       Separare "voluto" da "chiesto" serve a una cosa sola, ed è la più
+       sentita col trackpad: un decoder che sta già cercando non accetta una
+       nuova richiesta, quindi prima si aspettava il giro successivo del
+       ticker per riprovare. Sono fino a sedici millisecondi di attesa per
+       ogni fotogramma, spesi a non fare nulla, ed è la differenza fra un
+       filmato che segue il dito e uno che lo rincorre a strappi. Ora appena
+       il decoder ha finito, se nel frattempo lo scroll è andato oltre, la
+       richiesta successiva parte da dentro l'evento `seeked`. */
+    function seekTo(idx) {
+      lastFrame = idx;
+      try {
+        vid.currentTime = Math.min(dur - 1e-3, (idx + 0.5) / REF_FPS);
+      } catch (err) { lastFrame = -1; /* rifiutata: si riprova al frame dopo */ }
+    }
+    vid.addEventListener('seeked', () => {
+      if (wantFrame >= 0 && wantFrame !== lastFrame) seekTo(wantFrame);
+    });
 
     /* --- quanto scroll dura l'intro ---
        In pixel, non in vh: su mobile 100vh cambia quando la barra degli
@@ -962,7 +996,15 @@
       // corsa mentre il filmato è a metà, cioè uno scatto.
       if (introPx && w === lastW && Math.abs(h - lastH) < 140) return;
       lastW = w; lastH = h;
-      introPx = Math.round(h * (w < 900 ? 2.6 : 3.8));
+      /* Quanti schermi di scroll dura l'intro. Non è solo ritmo: è anche
+         quanto lavoro si chiede al decoder. Il filmato del laptop ha 168
+         fotogrammi; distribuirli su 3,8 schermi voleva dire un fotogramma
+         nuovo ogni 24px di scroll, e un colpo di trackpad ne fa qualche
+         centinaio in una frazione di secondo — cioè decine di ricerche al
+         secondo su fotogrammi da 3,7 megapixel. A 4,8 schermi si passa a
+         31px per fotogramma: la corsa è più lenta da guardare E più leggera
+         da decodificare, che è la stessa cosa vista da due lati. */
+      introPx = Math.round(h * (w < 900 ? 2.6 : 4.8));
       scrollBase = introPx;
       document.documentElement.style.setProperty('--intro-scroll', introPx + 'px');
     }
@@ -1160,20 +1202,29 @@
          chi legge apply(), dove k/tx/ty e ck/ctx/cty vengono usati insieme. */
       const k = 1, tx = 0, ty = 0;
 
-      /* Quanto sfocare: giusto quanto serve. Si misura lo scarto che RESTA
-         dopo la correzione sull'ancora peggiore e la sfocatura ne è una
-         frazione, con un tetto. Su uno schermo 16:9 lo scarto è di pochi
-         pixel e la sfocatura viene praticamente zero — il raccordo è già
-         pulito e sporcarlo sarebbe un peggioramento. Su 16:10 arriva a 3-4px,
-         quel tanto che rende illeggibile la differenza fra le due
-         impaginazioni proprio mentre si scambiano. */
+      /* Quanto sfocare: ormai quasi mai. Si misura lo scarto che RESTA dopo
+         la correzione sull'ancora peggiore, e la sfocatura è una frazione di
+         quello, con un tetto basso.
+
+         La taratura è stata rifatta al ribasso di proposito. Sfocare è il
+         modo più economico di nascondere un disallineamento, ma il prezzo lo
+         paga tutto il filmato: è un filter su un elemento a schermo intero,
+         cioè un layer in più da comporre a ogni fotogramma proprio nel punto
+         più delicato della corsa — e si vede, perché quello che si nasconde
+         è anche quello che si stava guardando. Al posto della sfocatura fa
+         ora lo stesso lavoro una dissolvenza più ripida (vedi `fade` in
+         apply): meno tempo con due immagini sovrapposte, meno bisogno di
+         renderle illeggibili. Così su 16:9 e su 16:10 — cioè su quasi tutti
+         gli schermi — non si accende affatto, e resta solo per i rapporti
+         davvero lontani da quello del filmato, dove lo scarto supera i
+         quarantacinque pixel e qualcosa va comunque coperto. */
       let worst = 0;
       for (const [a, b] of pts) {
         worst = Math.max(worst,
                          Math.abs(ck * a[0] + ctx - b[0]),
                          Math.abs(ck * a[1] + cty - b[1]));
       }
-      const blur = Math.min(5, worst / 10);
+      const blur = Math.min(2, worst / 45);
 
       /* La nav è il punto in cui questo metodo tocca il proprio limite, ed è
          onesto dirlo: è ancorata in ALTO mentre tutta la hero è ancorata in
@@ -1240,13 +1291,8 @@
          arriva. Pretendere readyState 2 significava, su iOS, non cercare mai. */
       if (vid.readyState >= 1) {
         const nFrames = Math.max(1, Math.round(dur * REF_FPS));
-        const idx = Math.round(clamp01(p / V_END) * (nFrames - 1));
-        if (idx !== lastFrame && !vid.seeking) {
-          lastFrame = idx;
-          try {
-            vid.currentTime = Math.min(dur - 1e-3, (idx + 0.5) / REF_FPS);
-          } catch (err) { lastFrame = -1; /* rifiutata: si riprova al frame dopo */ }
-        }
+        wantFrame = Math.round(clamp01(p / V_END) * (nFrames - 1));
+        if (wantFrame !== lastFrame && !vid.seeking) seekTo(wantFrame);
       }
 
       /* 2 — il quadro si allinea alla pagina.
@@ -1292,6 +1338,21 @@
       const blurA = match.blur || 0;
       const blur  = (blurA * thru).toFixed(2);
 
+      /* Il MOVIMENTO e la DISSOLVENZA non seguono più la stessa curva, ed è
+         la mossa che ha sostituito la sfocatura.
+
+         Il movimento resta `thru`, morbido e distribuito su tutta la
+         finestra: è il gesto, e va sentito per intero. La dissolvenza invece
+         usa `fade`, che è `thru` passato una seconda volta nella stessa
+         smoothstep: stessa durata, stesso inizio e stessa fine senza
+         spigoli, ma il grosso dello scambio si concentra nel mezzo (a un
+         quarto della finestra il filmato è ancora opaco al 94%, prima era
+         all'84%). Il tempo in cui si vedono DUE immagini sovrapposte si
+         dimezza, e quel tempo era l'unica ragione per cui serviva sfocare.
+         Il conto è tutto qui: meno sovrapposizione al posto di meno
+         nitidezza. */
+      const fade  = thru * thru * (3 - 2 * thru);
+
       /* La correzione d'attraversamento (match.ck/ctx/cty) è il movimento
          misurato che porta il testo del filmato su quello della pagina vera.
          Interpolandola con `thru`, la spinta dentro lo schermo E l'incastro
@@ -1306,9 +1367,19 @@
       const vk  = ck * e * mk;
       const vTx = ck * (e * mx + eTx) + ctx;
       const vTy = ck * (e * my + eTy) + cty;
-      stage.style.transform =
+      /* Si scrive solo se è cambiato qualcosa. Sembra un dettaglio da nulla e
+         invece qui non lo è: sul laptop, durante tutto il volo, questa
+         trasformazione è l'identità e non cambia mai (vedi E_AMP) — senza
+         questo controllo si riassegnerebbe la stessa stringa a ogni
+         fotogramma, con il ricalcolo di stile che ne segue, mentre il decoder
+         sta cercando. È tempo macchina tolto alla cosa che deve essere
+         fluida. */
+      const stageT =
         'translate(' + vTx.toFixed(2) + 'px,' + vTy.toFixed(2) + 'px) scale(' + vk.toFixed(5) + ')';
-      stage.style.filter = (blurA >= BLUR_MIN && thru > 0) ? 'blur(' + blur + 'px)' : '';
+      if (stageT !== lastStageT) { lastStageT = stageT; stage.style.transform = stageT; }
+
+      const filt = (blurA >= BLUR_MIN && thru > 0) ? 'blur(' + blur + 'px)' : '';
+      if (filt !== stage.style.filter) stage.style.filter = filt;
 
       /* La pagina vera sta ferma sotto il vetro e si muove solo con la camera
          condivisa (`e`): è il video che le va incontro, non il contrario.
@@ -1322,28 +1393,33 @@
       const pk  = e * arrive;
       const pTx = cx * (1 - pk), pTy = cy * (1 - pk);
       const pageT = 'translate(' + pTx.toFixed(2) + 'px,' + pTy.toFixed(2) + 'px) scale(' + pk.toFixed(5) + ')';
-      stick.style.transform = pageT;
-      if (navEl) navEl.style.transform = pageT;
+      if (pageT !== lastPageT) {
+        lastPageT = pageT;
+        stick.style.transform = pageT;
+        if (navEl) navEl.style.transform = pageT;
+      }
 
       // sfondo 3D: stesso arrivo della pagina + assestamento della sfera
       if (scene) {
         const sk = pk * (1 + (match.sphere - 1) * (1 - l));
-        scene.style.transform =
+        const sceneT =
           'translate(' + (cx * (1 - sk)).toFixed(2) + 'px,' + (cy * (1 - sk)).toFixed(2) + 'px) ' +
           'scale(' + sk.toFixed(5) + ')';
+        if (sceneT !== lastSceneT) { lastSceneT = sceneT; scene.style.transform = sceneT; }
       }
 
-      /* 4 — lo scambio. L'opacità segue la STESSA curva della spinta e della
-         sfocatura: il filmato si dissolve mentre attraversa, non prima e non
-         dopo. Un solo gesto, non due eventi sovrapposti. */
-      intro.style.opacity = (1 - thru).toFixed(3);
+      /* 4 — lo scambio, sulla curva più ripida (vedi `fade` sopra): il filmato
+         si dissolve mentre attraversa — non prima, non dopo — ma ci mette
+         meno tempo a farlo di quanto ne metta il movimento. Un solo gesto,
+         con lo scambio vero concentrato nel suo mezzo. */
+      intro.style.opacity = (1 - fade).toFixed(3);
 
       /* L'indicatore "Scorri" nell'ultimo fotogramma del filmato non c'è: il
          quadro del video si ferma poco sopra. Farlo comparire insieme allo
          scambio sarebbe l'unico dettaglio a tradire il passaggio, quindi
          entra subito dopo, quando il sito ha già preso il comando — si legge
          come l'invito a proseguire, non come un pezzo che spunta. */
-      if (cue) cue.style.opacity = String(seg(p, 0.965, 1));
+      if (cue) cue.style.opacity = String(seg(p, 0.985, 1));
 
       /* Reversibile, non un one-shot: al primo movimento si dissolve, ma se si
          risale fino a tornare al fotogramma di partenza deve trovarsi lì di
@@ -1358,11 +1434,19 @@
       }
 
       /* 5 — risorse.
-         Fino a metà corsa il filmato copre tutto: la scena 3D resta spenta e
-         il nastro scorrevole fermo, e tutto il tempo macchina va al decoder.
-         Da metà in poi si riaccende ogni cosa, con largo anticipo sul
-         raccordo, così alla consegna la sfera sta già girando. */
-      const live = p >= 0.5;
+         Finché il filmato copre tutto, la scena 3D resta spenta e il nastro
+         scorrevole fermo: tutto il tempo macchina va al decoder.
+
+         La soglia è passata da metà corsa a tre quarti, e la ragione è
+         misurabile. La scena riscrive 19.500 coordinate a ogni fotogramma
+         sul thread principale e poi disegna qualche migliaio di punti: dalla
+         metà in poi quel lavoro girava in parallelo alle ricerche sul video,
+         cioè esattamente nella parte in cui il filmato si vede meglio ed è
+         più fitto di movimento. Spostare la soglia a 0,75 restituisce
+         quell'intervallo al decoder, e alla sfera resta comunque un quarto di
+         corsa — più di mille pixel di scroll — per trovarsi già viva e in
+         rotazione alla consegna: deve trovarsi lì, non comparire. */
+      const live = p >= 0.75;
       if (live !== glGate) {
         glGate = live;
         document.documentElement.classList.toggle('intro-idle', !live);
@@ -1382,6 +1466,10 @@
           // il filtro va tolto esplicitamente: una blur() dimenticata su un
           // elemento a schermo intero resta a costare GPU per tutta la visita
           stage.style.filter = '';
+          // le stringhe in cache vanno azzerate insieme agli stili che
+          // descrivevano, altrimenti risalendo il controllo "è cambiato?"
+          // confronterebbe con qualcosa che non è più sull'elemento
+          lastStageT = lastPageT = lastSceneT = '';
         }
       }
     }
@@ -1398,7 +1486,15 @@
         trigger: hero,
         start: 'top top',
         end: () => '+=' + introPx,
-        scrub: 0.5,
+        /* Quanti secondi impiega la corsa a raggiungere la posizione di
+           scroll. È il filtro che trasforma i gradini della rotella — e i
+           colpi di momentum del trackpad, che arrivano a raffica e poi si
+           spengono da soli — in un movimento continuo. Da 0,5 a 0,75: un
+           filo più di ritardo sul dito, in cambio di una curva che non ha
+           più spigoli da nessuna parte. Su un video guidato dallo scroll
+           conviene sempre stare dal lato morbido, perché ogni spigolo qui
+           diventa una ricerca in più chiesta al decoder. */
+        scrub: 0.75,
         invalidateOnRefresh: true
       }
     });
