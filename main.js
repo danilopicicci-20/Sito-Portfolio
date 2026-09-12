@@ -101,8 +101,9 @@
 
   /* --- I due filmati d'intro, e le misure prese sul loro ultimo fotogramma ---
 
-     Hanno risoluzioni diverse (laptop 856×482, telefono 1920×1080) e
-     inquadrano cose diverse. Quello del laptop
+     Sono entrambi 1920×1080 (una coincidenza di questo terzo render, non una
+     regola: main.js legge la risoluzione di ciascuno da REF, non la
+     presuppone), ma inquadrano cose diverse. Quello del laptop
      mostra la pagina a tutto schermo. Quello del telefono la mostra dentro il
      display, in una finestra verticale al centro del fotogramma — e non è un
      ostacolo, è un colpo di fortuna: object-fit:cover su uno schermo verticale
@@ -123,24 +124,37 @@
      browser — può continuare a servire il video vecchio per un anno intero
      senza mai richiederlo di nuovo. È lo stesso bug della cache di main.js
      scoperto su Safari, spostato sui video. */
-  const VIDEO_V = '20260912a';
+  const VIDEO_V = '20260912b';
 
   const REF = {
     laptop: {
       src:     'assets/video/intro-desktop.mp4?v=' + VIDEO_V,
-      fw: 856, fh: 482,       // risoluzione di QUESTO filmato
-      /* Il filmato è lo stesso render di prima, riesportato più piccolo: le
-         ancore già validate sono state riportate nello spazio 856×482 e poi
-         ricontrollate sul fotogramma finale. Il logo nav cadeva a 47,8/47,9
-         per calcolo e a 47,5/47,0 per misura, il filetto a 411,7 contro 412:
-         è la stessa inquadratura, a un'altra risoluzione. */
-      titleTL: [  40, 189],   // angoli del blocco titolo
-      titleBR: [ 816, 383],
-      ruleL:   [  40, 412],   // estremi del filetto sopra il sottotitolo
-      ruleR:   [ 816, 412],
-      mark:    [ 47.8, 47.5], // centro del logo nella nav
-      topBand: 79,            // sotto questa quota inizia il brandmark
-      vEnd:    0.88           // qui il filmato è all'ultimo fotogramma
+      fw: 1920, fh: 1080,     // risoluzione di QUESTO filmato
+      /* Terzo render dello stesso setup, questa volta consegnato a 3832×2160
+         e qui ridotto a 1920×1080: le ancore già validate sono state
+         riportate nel nuovo spazio (fattore ~2,24 da 856×482) e poi
+         ricontrollate sul fotogramma finale a piena risoluzione — il logo
+         nav cadeva a 214,0/212,9 per calcolo e a 216,6/214,6 per misura, il
+         filetto a 1846,3 contro 1845,5: stessa inquadratura, altra
+         risoluzione, com'era già stato per i render precedenti.
+
+         A differenza dei filmati precedenti, QUESTO non si ferma affatto
+         prima della fine: la camera continua ad avvicinarsi fin quasi
+         all'ultimissimo fotogramma (lo scarto fra un fotogramma e il
+         successivo resta sopra il rumore di fondo fino al 97-98% della
+         durata). vEnd va quindi tenuto vicino a 1, e — soprattutto — il
+         passaggio al sito vero (FADE_A più sotto) deve scattare esattamente
+         lì e non prima: cominciarlo mentre la camera si vede ancora
+         muovere, come succedeva con la soglia fissa pensata per il render
+         precedente (che invece si fermava all'88%), è la causa più diretta
+         di uno scambio che sembra "saltare" invece che scorrere. */
+      titleTL: [  89.7, 423.5],  // angoli del blocco titolo
+      titleBR: [1830.3, 858.2],
+      ruleL:   [  89.7, 923.2],  // estremi del filetto sopra il sottotitolo
+      ruleR:   [1830.3, 923.2],
+      mark:    [ 107.2, 106.4],  // centro del logo nella nav
+      topBand: 177,              // sotto questa quota inizia il brandmark
+      vEnd:    0.98              // qui il filmato è all'ultimo fotogramma
     },
     telefono: {
       src:     'assets/video/intro-phone.mp4?v=' + VIDEO_V,
@@ -210,10 +224,11 @@
      coincidono si rinuncia all'allineamento e si allunga lo scambio. */
   const ref =
       usePhone          ? Object.assign({ layout: 'telefono' }, REF.telefono)
-    /* Fra 481 e 899px si usa lo stesso filmato del laptop: prima esisteva un
-       terzo file alleggerito, ma ora il laptop è già 856×482, cioè la stessa
-       taglia di quella versione ridotta. Tenerne due sarebbe un megabyte in
-       più nel repo per un file identico. */
+    /* Fra 481 e 899px si usa lo stesso filmato del laptop: un terzo file
+       alleggerito per questa fascia esiste già come idea in cantiere, non
+       come necessità — a 1920×1080 e ~4,5MB il filmato resta comunque più
+       leggero del peso medio di una pagina con immagini, quindi non è
+       ancora un problema da risolvere. */
     : innerWidth <  900 ? Object.assign({ layout: 'laptop' }, REF.laptop)
     :                     Object.assign({ layout: 'laptop' }, REF.laptop);
 
@@ -825,11 +840,11 @@
      bottone.
      =========================================================================== */
 
-  /* Dimensioni del fotogramma del filmato in corso. NON è una costante: i due
-     filmati non hanno la stessa risoluzione (il telefono 1920×1080, il
-     laptop 856×482), e tutte le coordinate di riferimento vivono nello
-     spazio pixel del proprio video. Sbagliare questo numero sposta ogni
-     ancora. */
+  /* Dimensioni del fotogramma del filmato in corso. NON è una costante: anche
+     se oggi entrambi i filmati sono 1920×1080, ogni set di coordinate di
+     riferimento vive nello spazio pixel del proprio video, e i due potranno
+     tornare a divergere a un prossimo giro di render. Sbagliare questo
+     numero sposta ogni ancora. */
   const REF_W = ref.fw, REF_H = ref.fh;
 
   /* Il filmato è a 30 fps esatti. Serve saperlo: cercare un istante qualunque
@@ -853,15 +868,16 @@
      lì non si vede proprio nulla muoversi. */
   const SET_A  = 0.70, SET_B = 0.90;    // il quadro si allinea allo schermo
 
-  /* Il passaggio attraverso il vetro.
-     Sul telefono comincia esattamente dove il filmato finisce (ref.vEnd): la
-     camera deve prima entrare del tutto nel display, e SOLO DOPO si
+  /* Il passaggio attraverso il vetro comincia sempre esattamente dove il
+     filmato finisce (ref.vEnd), su entrambi i layout: la camera deve prima
+     arrivare del tutto alla propria inquadratura finale, e SOLO DOPO si
      attraversa. Farlo partire prima significherebbe dissolvere il video
-     mentre sta ancora avvicinandosi — l'ingresso non si vedrebbe mai.
-     Sul laptop resta breve e leggero, perché lì i due quadri combaciano
-     davvero e più corto è, meno si nota. */
-  const FADE_A = ref.layout === 'telefono' ? ref.vEnd : 0.92;
-  const FADE_B = ref.layout === 'telefono' ? 1.00     : 0.978;
+     mentre si vede ancora muovere — è la causa più diretta di uno scambio
+     che sembra un salto invece che uno scorrimento continuo. Per questo la
+     soglia è legata a vEnd invece che scritta a mano: cambia da sola se un
+     giorno arriva un altro filmato con un'altra durata di corsa. */
+  const FADE_A = ref.vEnd;
+  const FADE_B = 1.00;
 
   /* Intensità dell'attraversamento.
      La SPINTA non è più un numero scelto a mano: è la correzione misurata in
@@ -869,14 +885,18 @@
      filmato su quella vera. Resta da regolare solo quanto si sfoca.
 
      La sfocatura serve nel mezzo del guado, dove le due composizioni sono
-     ancora a metà strada: lì rende illeggibile la differenza. Sul laptop
-     resta a zero, perché i due quadri già coincidono e sporcare un raccordo
-     che funziona sarebbe un peggioramento.
+     ancora a metà strada: lì rende illeggibile la differenza. Il laptop non
+     ha un bordo fisico a cui ancorarsi come lo schermo del telefono — il
+     raccordo si affida al testo, quindi resta un'approssimazione — e una
+     sfocatura leggera lo rende sempre pulito anche nei millimetri in cui non
+     coincide esattamente, senza il peso visivo dei 6px usati sul telefono
+     (lì serve di più perché la spinta dentro il vetro è più lunga).
 
-     L'ARRIVO della pagina va invece quasi azzerato sul telefono: ora è il
-     video ad andare a posarsi sulla pagina, non il contrario. Se si muovessero
+     L'ARRIVO della pagina resta leggero sul laptop (i due quadri erano già
+     vicini in partenza) e quasi azzerato sul telefono: lì è il video ad
+     andare a posarsi sulla pagina, non il contrario — se si muovessero
      entrambi, si rincorrerebbero. */
-  const THRU_BLUR = ref.layout === 'telefono' ? 6 : 0;
+  const THRU_BLUR = ref.layout === 'telefono' ? 6 : 3;
   const THRU_ARR  = ref.layout === 'telefono' ? 0 : 0.015;
   const LIVE_A = 0.90, LIVE_B = 1.00;   // ultimo tratto di corsa della camera
   const E_AMP  = 0.012;                 // ampiezza di quell'ultimo tratto
