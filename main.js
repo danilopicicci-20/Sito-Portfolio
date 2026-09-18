@@ -101,7 +101,7 @@
 
   /* --- I due filmati d'intro, e le misure prese sul loro ultimo fotogramma ---
 
-     Hanno risoluzioni diverse (laptop 2560×1440, telefono 1920×1080: ogni
+     Hanno risoluzioni diverse (laptop 2560×1440, telefono 1280×720: ogni
      set di coordinate vive nello spazio pixel del proprio filmato) e
      inquadrano cose diverse. Quello del laptop
      mostra la pagina a tutto schermo. Quello del telefono la mostra dentro il
@@ -124,7 +124,7 @@
      browser — può continuare a servire il video vecchio per un anno intero
      senza mai richiederlo di nuovo. È lo stesso bug della cache di main.js
      scoperto su Safari, spostato sui video. */
-  const VIDEO_V = '20260912d';
+  const VIDEO_V = '20260918a';
 
   const REF = {
     laptop: {
@@ -173,22 +173,24 @@
     },
     telefono: {
       src:     'assets/video/intro-phone.mp4?v=' + VIDEO_V,
-      fw: 1920, fh: 1080,     // risoluzione di QUESTO filmato
-      /* Stesso render di prima, riesportato a 1,5×: i bordi del display, che
-         non dipendono da testo o interpretazione, coincidono con la scala
+      fw: 1280, fh: 720,      // risoluzione di QUESTO filmato
+      /* Stesso render di prima, riesportato più piccolo (fattore esatto
+         2/3 da 1920×1080): i bordi del display coincidono con la scala
          attesa fino al mezzo pixel — sul fotogramma finale lo schermo va da
-         x 710 a x 1209 (atteso 710,25–1208,25 scalando 473,5–805,5 per 1,5).
-         Le altre ancore sono le stesse di prima moltiplicate per 1,5. */
-      screenCX: 959.25,
-      screenHW: 249,
-      icon:    [777.0, 181.5],  // centro dell'icona del brandmark nel filmato
+         x 473,5 a x 805,5 (atteso esattamente quello, scalando 710,25–
+         1208,25 per 2/3), il logo nav cade a 510,0/59,3 per misura contro
+         509,0/58,5 per calcolo. Le altre ancore sono le stesse di prima
+         moltiplicate per 2/3. */
+      screenCX: 639.5,
+      screenHW: 166,
+      icon:    [518.0, 121.0],  // centro dell'icona del brandmark nel filmato
       // le ancore del testo restano documentate ma non guidano più il quadro
-      titleTL: [ 750.0, 324.0],
-      titleBR: [1024.5, 594.0],
-      ruleL:   [ 748.5, 696.0],
-      ruleR:   [1170.0, 696.0],
-      mark:    [763.5,  87.75],
-      topBand: 144,
+      titleTL: [ 500.0, 216.0],
+      titleBR: [ 683.0, 396.0],
+      ruleL:   [ 499.0, 464.0],
+      ruleR:   [ 780.0, 464.0],
+      mark:    [ 509.0,  58.5],
+      topBand: 96,
       vEnd:    0.97            // qui il nuovo filmato si è già fermato
     }
   };
@@ -856,7 +858,7 @@
      =========================================================================== */
 
   /* Dimensioni del fotogramma del filmato in corso. NON è una costante: i due
-     filmati hanno risoluzioni diverse (laptop 2560×1440, telefono 1920×1080)
+     filmati hanno risoluzioni diverse (laptop 2560×1440, telefono 1280×720)
      e ogni set di coordinate di riferimento vive nello spazio pixel del
      proprio video. Sbagliare questo numero sposta ogni ancora. */
   const REF_W = ref.fw, REF_H = ref.fh;
