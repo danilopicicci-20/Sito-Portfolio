@@ -988,7 +988,8 @@
     if (cue) cue.style.opacity = '0';   // entra alla fine, vedi apply()
 
     let dur     = vid.duration || 8;
-    let introPx = 0;
+    let introPx = 0;   // corsa dell'ANIMAZIONE
+    let landPx  = 0;   // corsa in più in cui la hero resta bloccata: vedi measureIntro
     let match   = { k: 1, tx: 0, ty: 0, sphere: 1, mask: false, maskY: 0 };
     let done    = false;
     let hintShown = true;   // stato del "Scorri per entrare": reversibile, vedi apply()
@@ -1126,8 +1127,37 @@
          31px per fotogramma: la corsa è più lenta da guardare E più leggera
          da decodificare, che è la stessa cosa vista da due lati. */
       introPx = Math.round(h * (w < 900 ? 2.6 : 4.8));
-      scrollBase = introPx;
-      document.documentElement.style.setProperty('--intro-scroll', introPx + 'px');
+
+      /* --- la corsa bloccata è PIÙ LUNGA dell'animazione, ed è il punto ---
+
+         Finora le due coincidevano: la hero si sbloccava esattamente dove
+         finiva il filmato. Sembra la scelta ovvia e invece è la causa del
+         difetto più fastidioso del raccordo — "entro nello schermo e mi
+         ritrovo già più in basso".
+
+         Il motivo è che l'animazione NON è alla posizione di scroll: `scrub`
+         la fa inseguire con tre quarti di secondo di ritardo, ed è un ritardo
+         voluto, è quello che toglie gli spigoli al trackpad. Ma se la corsa
+         bloccata finisce allo stesso pixel, quel ritardo diventa un difetto:
+         nel momento in cui lo scambio è a metà, lo scroll vero è già oltre la
+         fine, la hero si è già staccata e sta salendo — quindi il filmato si
+         dissolve su una pagina che si è già mossa. Il raccordo era calcolato
+         al pixel su una pagina ferma, e la trova in viaggio.
+
+         Lo stesso vale su telefono per un'altra ragione: la corsa bloccata è
+         alta 100svh (viewport PICCOLO, barra degli indirizzi fuori) mentre
+         introPx si misura su innerHeight (viewport reale, barra rientrata).
+         Quando la barra è rientrata la prima è più corta della seconda, e la
+         hero si stacca prima ancora che il filmato sia finito.
+
+         La soluzione è la stessa per entrambi: dopo l'animazione la hero
+         resta bloccata ancora un po'. Quel tratto è il posto dove il sito
+         atterra — abbastanza da assorbire il ritardo dello scrub e la
+         differenza fra svh e innerHeight, abbastanza corto da leggersi come
+         un respiro e non come una pagina che non risponde. */
+      landPx = Math.round(h * (w < 900 ? 0.4 : 0.5));
+      scrollBase = introPx + landPx;
+      document.documentElement.style.setProperty('--intro-scroll', (introPx + landPx) + 'px');
     }
 
     /* --- il cuore: dove finisce il filmato deve esserci la pagina ---
@@ -1393,6 +1423,19 @@
        risalire ripercorre esattamente la stessa strada al contrario. */
     function apply(p) {
 
+      /* Lo scroll VERO, non quello che l'animazione sta inseguendo. Serve a
+         una cosa sola, ma importante: sapere se la pagina ha ormai lasciato
+         la corsa bloccata. Se è successo — perché qualcuno ha scorso molto
+         più in fretta di quanto lo scrub riesca a recuperare, o perché su
+         telefono la barra degli indirizzi ha cambiato le misure sotto i
+         piedi — allora il raccordo non ha più senso: è stato calcolato su una
+         hero ferma al suo posto, e quella hero ora sta salendo. In quel caso
+         lo scambio si chiude subito invece di mostrare un filmato che si
+         dissolve su una pagina in movimento. È una rete di sicurezza: con la
+         coda bloccata aggiunta in measureIntro non dovrebbe scattare quasi
+         mai, e resta reversibile come tutto il resto. */
+      const past = scrollBase > 0 && scrollY >= scrollBase;
+
       /* 1 — il fotogramma.
          Tre accorgimenti, e servono tutti e tre:
 
@@ -1469,7 +1512,7 @@
          mezzo. Qui serve una curva simmetrica — parte piano, accelera al
          centro, si posa piano — perché l'attraversamento è un gesto, non una
          sparizione. */
-      const tRaw  = seg(p, FADE_A, FADE_B);
+      const tRaw  = past ? 1 : seg(p, FADE_A, FADE_B);
       const thru  = tRaw * tRaw * (3 - 2 * tRaw);
       const blurA = match.blur || 0;
       const blur  = (blurA * thru).toFixed(2);
@@ -1591,7 +1634,7 @@
 
       /* 6 — fine corsa: l'intro esce di scena e la pagina torna pulita.
          Reversibile, perché si può sempre risalire. */
-      const shouldEnd = p >= 0.999;
+      const shouldEnd = p >= 0.999 || past;
       if (shouldEnd !== done) {
         done = shouldEnd;
         intro.classList.toggle('is-done', done);

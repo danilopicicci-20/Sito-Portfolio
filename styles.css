@@ -487,9 +487,16 @@ main, .nav, .footer{ position:relative; z-index:2; }
    quando la barra degli indirizzi si ritrae, e la corsa dell'intro si
    allungherebbe a metà animazione).
    La sezione diventa alta "una schermata + la corsa"; il blocco interno resta
-   incollato in alto per tutta la corsa e si stacca esattamente quando il
-   filmato è finito. Risultato: alla fine dell'intro la pagina è già
-   posizionata sulla hero, non deve "arrivarci". */
+   incollato in alto per tutta la corsa. Risultato: alla fine dell'intro la
+   pagina è già posizionata sulla hero, non deve "arrivarci".
+
+   Attenzione a un dettaglio che qui non si vede ma che conta: --intro-scroll
+   è PIÙ LUNGA dell'animazione. Le due coincidevano, e proprio per questo la
+   hero si staccava nello stesso istante in cui il filmato finiva di
+   dissolversi — senza un margine, il ritardo voluto dello scrub bastava a far
+   scorrere la pagina mentre lo scambio era ancora a metà. La differenza fra
+   le due è la coda su cui il sito atterra: la calcola measureIntro() in
+   main.js, dove è spiegata per esteso. */
 html.has-intro .hero{ min-height:calc(100svh + var(--intro-scroll, 0px)); }
 html.has-intro .hero__sticky{
   position:sticky; top:0; height:100svh; min-height:0;
