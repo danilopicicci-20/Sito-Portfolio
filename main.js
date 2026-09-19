@@ -1120,13 +1120,23 @@
       lastW = w; lastH = h;
       /* Quanti schermi di scroll dura l'intro. Non è solo ritmo: è anche
          quanto lavoro si chiede al decoder. Il filmato del laptop ha 168
-         fotogrammi; distribuirli su 3,8 schermi voleva dire un fotogramma
-         nuovo ogni 24px di scroll, e un colpo di trackpad ne fa qualche
-         centinaio in una frazione di secondo — cioè decine di ricerche al
-         secondo su fotogrammi da 3,7 megapixel. A 4,8 schermi si passa a
-         31px per fotogramma: la corsa è più lenta da guardare E più leggera
-         da decodificare, che è la stessa cosa vista da due lati. */
-      introPx = Math.round(h * (w < 900 ? 2.6 : 4.8));
+         fotogrammi, e più corta è la corsa più fitte diventano le ricerche
+         chieste al decoder — a 4 schermi su un monitor da 900 è un fotogramma
+         nuovo ogni 20px di scroll, e un colpo di trackpad ne fa qualche
+         centinaio in una frazione di secondo.
+
+         Era a 4,8 per alleggerire proprio quel carico, quando lo scrubbing
+         scattava. Ma il grosso di quel problema non lo risolveva la lentezza:
+         lo risolvevano le ricerche che ripartono da dentro `seeked` invece di
+         aspettare il ticker, la scena 3D spenta fino a tre quarti di corsa e
+         gli stili riscritti solo quando cambiano davvero. Quelle restano
+         tutte, quindi il margine per tornare più svelti c'è — e una corsa di
+         cinque schermate per arrivare al sito era comunque tanta.
+
+         Il telefono invece resta a 2,6: lì la corsa è già poco più di due
+         swipe, ed è l'unica parte del raccordo che non ha mai avuto bisogno
+         di essere rivista. Ad accorciarsi è il desktop. */
+      introPx = Math.round(h * (w < 900 ? 2.6 : 4.0));
 
       /* --- la corsa bloccata è PIÙ LUNGA dell'animazione, ed è il punto ---
 
@@ -1155,7 +1165,9 @@
          atterra — abbastanza da assorbire il ritardo dello scrub e la
          differenza fra svh e innerHeight, abbastanza corto da leggersi come
          un respiro e non come una pagina che non risponde. */
-      landPx = Math.round(h * (w < 900 ? 0.4 : 0.5));
+      /* La coda si accorcia insieme al resto: serve ad assorbire il ritardo
+         dello scrub, e quel ritardo è appena sceso di un quarto. */
+      landPx = Math.round(h * (w < 900 ? 0.35 : 0.4));
       scrollBase = introPx + landPx;
       document.documentElement.style.setProperty('--intro-scroll', (introPx + landPx) + 'px');
     }
@@ -1668,12 +1680,13 @@
         /* Quanti secondi impiega la corsa a raggiungere la posizione di
            scroll. È il filtro che trasforma i gradini della rotella — e i
            colpi di momentum del trackpad, che arrivano a raffica e poi si
-           spengono da soli — in un movimento continuo. Da 0,5 a 0,75: un
-           filo più di ritardo sul dito, in cambio di una curva che non ha
-           più spigoli da nessuna parte. Su un video guidato dallo scroll
-           conviene sempre stare dal lato morbido, perché ogni spigolo qui
-           diventa una ricerca in più chiesta al decoder. */
-        scrub: 0.75,
+           spengono da soli — in un movimento continuo. Ed è anche, tutto
+           intero, il ritardo fra il dito e l'immagine: è QUESTO il numero che
+           decide se l'intro sembra reattiva, non la lunghezza della corsa.
+           0,55 è il compromesso: abbastanza da non lasciare spigoli (sotto
+           il mezzo secondo i gradini della rotella ricominciano a vedersi),
+           abbastanza poco da sentire che il filmato risponde. */
+        scrub: 0.55,
         invalidateOnRefresh: true
       }
     });
