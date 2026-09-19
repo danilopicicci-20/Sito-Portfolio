@@ -253,6 +253,75 @@ html.intro-idle .grain{ animation:none; }
   pointer-events:none;
 }
 
+/* ---------------------------------------------------------------------------
+   Il wordmark d'apertura ridisegnato come testo vero
+   ---------------------------------------------------------------------------
+   Il contenitore è grande esattamente quanto un fotogramma del filmato e JS gli
+   applica la stessa scala di object-fit:cover: così tutto ciò che sta dentro si
+   posiziona in PIXEL DEL VIDEO, gli stessi numeri misurati sul fotogramma, e
+   non c'è nessuna conversione da rifare a ogni ridimensionamento.
+   Resta spento (opacity 0) finché JS non lo accende: se il font non arriva o il
+   conto non torna, non si accende affatto e si vede il filmato com'è sempre
+   stato. */
+.intro__wm{
+  position:absolute; left:0; top:0;
+  transform-origin:0 0;
+  pointer-events:none;
+  opacity:0;
+}
+
+/* La toppa che copre la scritta incisa nel filmato.
+   Il fondo lì sotto è stato campionato sul filmato stesso: riga per riga è una
+   rampa orizzontale quasi perfetta (ricostruendola dai due margini l'errore
+   massimo è di 5 livelli su 255, su un fondo che ne vale 12-37 — invisibile).
+   Quindi bastano due gradienti verticali: quello di sinistra sotto, quello di
+   destra sopra sfumato da sinistra a destra. Il risultato è l'interpolazione
+   bilineare del fondo vero, senza nessuna immagine da scaricare. */
+.intro__wmpatch{
+  position:absolute;
+  background-image:linear-gradient(to bottom, #0e111c, #0d1320 50%, #0f1526);
+  /* I bordi vanno sfumati o il rettangolo si legge. Orizzontalmente c'è poco
+     margine (60px di fondo pulito accanto a 474px di scritta), quindi 9%;
+     verticalmente ce n'è di più e si può essere più morbidi. */
+  -webkit-mask-image:
+    linear-gradient(to right, transparent, #000 9%, #000 91%, transparent),
+    linear-gradient(to bottom, transparent, #000 20%, #000 80%, transparent);
+  -webkit-mask-composite:source-in;
+          mask-image:
+    linear-gradient(to right, transparent, #000 9%, #000 91%, transparent),
+    linear-gradient(to bottom, transparent, #000 20%, #000 80%, transparent);
+          mask-composite:intersect;
+}
+.intro__wmpatch > i{
+  position:absolute; inset:0;
+  background-image:linear-gradient(to bottom, #0e1420, #111625 50%, #111729);
+  -webkit-mask-image:linear-gradient(to right, rgba(0,0,0,0), #000);
+          mask-image:linear-gradient(to right, rgba(0,0,0,0), #000);
+}
+
+/* Le due righe. Dimensione, spaziatura e posizione arrivano da JS, che le
+   calcola misurando il font reale: l'obiettivo è che l'inchiostro occupi
+   ESATTAMENTE il riquadro della scritta originale (larghezza e altezza delle
+   maiuscole misurate sul fotogramma), così il testo vero prende il posto di
+   quello inciso senza spostare nulla nella composizione.
+   Il gradiente è quello del marchio, gli stessi due colori delle particelle
+   della sfera: è la cosa che il filmato non poteva avere, perché lì la scritta
+   è bianca e cotta nei pixel. */
+.intro__wmline{
+  position:absolute; white-space:nowrap;
+  font-family:var(--sans); font-weight:300; line-height:1;
+  -webkit-background-clip:text; background-clip:text;
+  color:transparent;
+}
+#introWmA{
+  background-image:linear-gradient(90deg, var(--accent), #4597df);
+  filter:drop-shadow(0 0 16px rgba(124,92,255,.34)) drop-shadow(0 0 44px rgba(124,92,255,.16));
+}
+#introWmB{
+  background-image:linear-gradient(90deg, #39a4d9, var(--accent-2));
+  filter:drop-shadow(0 0 12px rgba(0,226,184,.26)) drop-shadow(0 0 34px rgba(0,226,184,.12));
+}
+
 /* Invito allo scroll: senza, davanti a un dispositivo immobile si resta
    fermi. Si dissolve al primo movimento e riappare se si risale fino al
    fotogramma di partenza — è di nuovo il primo fotogramma, quindi torna a

@@ -65,7 +65,7 @@
        default). Senza cambiarlo, l'.htaccess può anche essere corretto e un
        browser può comunque continuare a rileggersi una copia vecchia se
        l'aveva già scaricata prima che l'.htaccess entrasse in vigore. -->
-  <link rel="stylesheet" href="styles.css?v=20260912a" />
+  <link rel="stylesheet" href="styles.css?v=20260919a" />
 
   <!-- =====================================================================
        Dati strutturati (schema.org / JSON-LD)
@@ -272,6 +272,23 @@
          ancorata in basso), e invece di farle saltare l'una sull'altra la
          prima viene spenta sul nero. Su 16:9 resta a opacità zero. -->
     <div class="intro__navmask" id="introNavMask"></div>
+
+    <!-- Il wordmark d'apertura, ridisegnato come testo VERO sopra al filmato.
+         Nel video quella scritta è pixel come tutto il resto, quindi su uno
+         schermo ad alta densità viene ingrandita e si vede morbida: è il
+         dettaglio più fine dell'inquadratura ed è il primo su cui l'occhio si
+         ferma, perché è il fotogramma su cui si sta mentre si legge "scorri
+         per entrare". Qui sotto la versione incisa nel filmato viene coperta
+         da una toppa che ricostruisce il fondo (due gradienti: misurato, quel
+         fondo è una rampa lineare) e al suo posto va del testo nel font del
+         sito, nitido a qualunque densità e con il gradiente del marchio.
+         Tutto guidato da JS, che lo spegne insieme all'originale e toglie la
+         toppa prima che la camera cominci a muoversi. -->
+    <div class="intro__wm" id="introWm">
+      <div class="intro__wmpatch"><i></i></div>
+      <div class="intro__wmline" id="introWmA">FLUIDS</div>
+      <div class="intro__wmline" id="introWmB">STUDIO</div>
+    </div>
   </div>
   <div class="intro__hint" id="introHint">
     <span>Scorri per entrare</span>
@@ -855,6 +872,6 @@
      Ora lo carica main.js da solo, a intro finita. Vedi la sezione 9. -->
 <script src="vendor/gsap.min.js" defer></script>
 <script src="vendor/ScrollTrigger.min.js" defer></script>
-<script src="main.js?v=20260918a" defer></script>
+<script src="main.js?v=20260919a" defer></script>
 </body>
 </html>

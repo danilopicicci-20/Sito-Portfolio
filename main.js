@@ -169,7 +169,35 @@
       ruleR:   [2440.4, 1230.9],
       mark:    [ 142.9,  141.9],  // centro del logo nella nav
       topBand: 236,               // sotto questa quota inizia il brandmark
-      vEnd:    0.94               // qui il filmato è all'ultimo fotogramma
+      vEnd:    0.94,              // qui il filmato è all'ultimo fotogramma
+
+      /* --- il wordmark d'apertura, da ridisegnare come testo vero ---
+
+         Tutte queste misure sono state prese leggendo i pixel del filmato
+         pubblicato, fotogramma per fotogramma, non stimate:
+
+         · i due riquadri d'inchiostro sull'ultimo fotogramma in cui la
+           scritta è piena (soglia di luminosità 90 su 255): FLUIDS occupa
+           1045→1518 in orizzontale con le maiuscole alte 64, STUDIO
+           1174→1385 con le maiuscole alte 26. Sono questi i numeri che il
+           testo vero deve rispettare per prendere esattamente il posto di
+           quello inciso;
+         · `patch` è il rettangolo di fondo da ricostruire, con margine
+           attorno all'inchiostro per coprire anche il bagliore;
+         · le quattro soglie sono in frazione del FILMATO (non della corsa
+           dello scroll), quindi sopravvivono a una ricodifica con un altro
+           numero di fotogrammi. La scritta incisa comincia a spegnersi verso
+           il fotogramma 8 di 168 ed è indistinguibile dal fondo al 24;
+           la toppa deve sparire un filo prima, perché al fotogramma 24 il
+           fondo sotto comincia a cambiare (la camera parte) e da lì in poi
+           una toppa ferma si vedrebbe. */
+      wm: {
+        a:     { text: 'FLUIDS', left: 1045, width: 474, capTop: 205, capHeight: 64 },
+        b:     { text: 'STUDIO', left: 1174, width: 212, capTop: 307, capHeight: 26 },
+        patch: [985, 150, 596, 240],
+        fadeA:  0.048, fadeB:  0.131,   // il testo si spegne
+        patchA: 0.107, patchB: 0.137    // la toppa se ne va
+      }
     },
     telefono: {
       src:     'assets/video/intro-phone.mp4?v=' + VIDEO_V,
@@ -966,7 +994,98 @@
     let hintShown = true;   // stato del "Scorri per entrare": reversibile, vedi apply()
     let lastFrame = -1;     // ultimo fotogramma CHIESTO al decoder
     let wantFrame = -1;     // ultimo fotogramma VOLUTO dallo scroll
-    let lastStageT = '', lastPageT = '', lastSceneT = '';
+    let lastStageT = '', lastPageT = '', lastSceneT = '', lastWmT = '';
+    let wmTxtOp = -1, wmPatchOp = -1;
+
+    /* --- il wordmark d'apertura ridisegnato come testo vero ---------------
+
+       Nel filmato "FLUIDS STUDIO" è inciso nei pixel come tutto il resto, e
+       paga il prezzo di tutti i pixel: su un portatile retina il viewport è
+       1512 in CSS ma 3024 in pixel fisici, quindi il fotogramma viene
+       ingrandito e quella scritta — tratti sottili su fondo scuro, il caso
+       peggiore — si vede morbida. È anche il primo dettaglio che l'occhio
+       incontra, perché è il fotogramma su cui si sta fermi a leggere
+       "scorri per entrare".
+
+       Qui la scritta incisa viene coperta e al suo posto va del testo vero:
+       nitido a qualsiasi densità, per sempre, qualunque risoluzione abbia il
+       filmato — e per giunta può portare il gradiente del marchio, cosa che
+       una scritta cotta nei pixel non potrà mai fare.
+
+       Il contenitore è grande quanto un fotogramma e riceve la stessa scala
+       di object-fit:cover, quindi tutto dentro si posiziona nei pixel del
+       video: le stesse coordinate misurate sul fotogramma, senza conversioni.
+       Vive dentro lo stage, così eredita anche la trasformazione del quadro.
+
+       Se qualcosa non torna — markup assente, font che non arriva, conto che
+       dà un numero assurdo — non si accende niente e si vede il filmato
+       esattamente com'era. */
+    const WM    = (ref.layout === 'laptop' && ref.wm) ? ref.wm : null;
+    const wmEl  = WM ? document.getElementById('introWm') : null;
+    const wmA   = wmEl ? document.getElementById('introWmA') : null;
+    const wmB   = wmEl ? document.getElementById('introWmB') : null;
+    const wmPat = wmEl ? wmEl.querySelector('.intro__wmpatch') : null;
+    let   wmOk  = false;
+
+    /* Dimensione e spaziatura si ricavano MISURANDO il font vero, non
+       scrivendole a mano: l'inchiostro deve stare esattamente nel riquadro
+       della scritta originale, e quel riquadro è noto al pixel. Due passaggi:
+       prima si trova il corpo che dà l'altezza giusta alle maiuscole
+       (actualBoundingBoxAscent su una misura di prova), poi la spaziatura che
+       porta la parola alla larghezza giusta. `top` tiene conto di dove cade
+       l'inchiostro dentro la riga, che non è il bordo della scatola. */
+    function fitWordmark() {
+      if (!wmEl || !wmA || !wmB || !wmPat) return;
+      try {
+        const cx2 = document.createElement('canvas').getContext('2d');
+        if (!cx2) return;
+        const font = getComputedStyle(document.body).fontFamily || 'sans-serif';
+        const pairs = [[WM.a, wmA], [WM.b, wmB]];
+        const plan = [];
+        for (const [s, el] of pairs) {
+          const probe = 200;
+          cx2.font = '300 ' + probe + 'px ' + font;
+          let m = cx2.measureText(s.text);
+          if (!m.actualBoundingBoxAscent) return;          // metriche non disponibili
+          const fs = s.capHeight / (m.actualBoundingBoxAscent / probe);
+          if (!isFinite(fs) || fs <= 0 || fs > 400) return; // misura assurda: si rinuncia
+          cx2.font = '300 ' + fs + 'px ' + font;
+          m = cx2.measureText(s.text);
+          const ls = (s.width - m.width) / (s.text.length - 1);
+          const halfLead = (fs - (m.fontBoundingBoxAscent + m.fontBoundingBoxDescent)) / 2;
+          const inkTop = halfLead + m.fontBoundingBoxAscent - m.actualBoundingBoxAscent;
+          if (!isFinite(ls) || !isFinite(inkTop)) return;
+          plan.push([el, s, fs, ls, inkTop]);
+        }
+        for (const [el, s, fs, ls, inkTop] of plan) {
+          el.style.left = s.left + 'px';
+          el.style.top = (s.capTop - inkTop).toFixed(2) + 'px';
+          el.style.fontSize = fs.toFixed(2) + 'px';
+          el.style.letterSpacing = ls.toFixed(2) + 'px';
+        }
+        wmEl.style.width = REF_W + 'px';
+        wmEl.style.height = REF_H + 'px';
+        wmPat.style.left = WM.patch[0] + 'px';
+        wmPat.style.top = WM.patch[1] + 'px';
+        wmPat.style.width = WM.patch[2] + 'px';
+        wmPat.style.height = WM.patch[3] + 'px';
+        wmOk = true;
+        placeWordmark();
+        wmEl.style.opacity = '1';   // da qui in poi lo comanda apply()
+      } catch (err) { wmOk = false; /* si resta col filmato così com'è */ }
+    }
+
+    /* Il quadro del filmato sullo schermo, sotto object-fit:cover: stessa
+       scala e stesso angolo in alto a sinistra. Si ricalcola solo quando il
+       layout cambia, non a ogni fotogramma. */
+    function placeWordmark() {
+      if (!wmOk || !wmEl) return;
+      const vw = innerWidth, vh = innerHeight;
+      const s0 = Math.max(vw / REF_W, vh / REF_H);
+      const t = 'translate(' + ((vw - REF_W * s0) / 2).toFixed(2) + 'px,' +
+                               ((vh - REF_H * s0) / 2).toFixed(2) + 'px) scale(' + s0.toFixed(5) + ')';
+      if (t !== lastWmT) { lastWmT = t; wmEl.style.transform = t; }
+    }
 
     /* --- il fotogramma chiesto al decoder ---
        Separare "voluto" da "chiesto" serve a una cosa sola, ed è la più
@@ -1297,6 +1416,21 @@
         if (wantFrame !== lastFrame && !vid.seeking) seekTo(wantFrame);
       }
 
+      /* 1b — il wordmark vero segue il suo gemello inciso nel filmato.
+         Le soglie sono in frazione del FILMATO, non della corsa: qui si
+         converte una volta sola. Il testo si spegne con la stessa curva
+         dell'originale (misurata: non è lineare, cala più in fretta a metà);
+         la toppa se ne va poco dopo, ma prima che la camera si muova —
+         quando lo fa, un rettangolo di fondo fermo si vedrebbe. */
+      if (wmOk) {
+        const q  = clamp01(p / V_END);
+        const tf = seg(q, WM.fadeA, WM.fadeB);
+        const to = +(1 - tf * tf * (3 - 2 * tf)).toFixed(3);
+        const po = +(1 - seg(q, WM.patchA, WM.patchB)).toFixed(3);
+        if (to !== wmTxtOp)   { wmTxtOp = to; wmA.style.opacity = to; wmB.style.opacity = to; }
+        if (po !== wmPatchOp) { wmPatchOp = po; wmPat.style.opacity = po; }
+      }
+
       /* 2 — il quadro si allinea alla pagina.
          Succede mentre il filmato è già fermo sull'ultimo fotogramma: non si
          legge come una correzione, si legge come la camera che si assesta. */
@@ -1522,6 +1656,9 @@
         mask.style.height = 'calc(100% + ' + match.maskY.toFixed(1) + 'px)';
         if (!match.mask) mask.style.opacity = '0';
       }
+      // il wordmark vero è incollato al quadro del filmato: se cambia il
+      // quadro (ridimensionamento, rotazione) va riposizionato anche lui
+      placeWordmark();
     }
 
     // L'altezza della hero dipende da --intro-scroll: va scritta PRIMA che
@@ -1533,6 +1670,19 @@
     ScrollTrigger.refresh();
     remeasure();
     apply(0);
+
+    /* Il wordmark va misurato col font VERO, e qui — a differenza del
+       preloader — non c'è nessuna fretta: si aspetta document.fonts e basta,
+       senza tetto di tempo. Un tetto servirebbe solo a rischiare di misurare
+       con un font di sistema, che ha altre larghezze: il testo non prenderebbe
+       il posto di quello inciso e si vedrebbe. E l'attesa non costa niente,
+       perché finché non si accende si vede il filmato esattamente com'è
+       sempre stato — per giunta sotto il preloader, che dura di più. */
+    if (document.fonts && document.fonts.ready) {
+      document.fonts.ready.then(() => { fitWordmark(); apply(proxy.p); });
+    } else {
+      fitWordmark();
+    }
 
     // Metadati: la durata reale sostituisce la stima appena disponibile.
     if (vid.readyState < 1) {
