@@ -139,7 +139,7 @@
      nomi, questo numero va cambiato. Vanno rigenerati anche quando cambia
      intro-desktop.mp4: sono lo stesso filmato, fotogramma per fotogramma,
      e le misure qui sotto valgono per entrambi. */
-  const FRAMES_V = '20261006a';
+  const FRAMES_V = '20261008a';
 
   const REF = {
     laptop: {
@@ -185,12 +185,25 @@
          uno. Il filmato arriva in fondo a 0.94 e si ferma lì: il contenuto
          smette di muoversi a 0,98·0,94 = 0,921, quindi c'è anche una breve
          coda ferma prima che il guado cominci. */
-      titleTL: [ 119.6,  564.7],  // angoli del blocco titolo
-      titleBR: [2440.4, 1144.3],
-      ruleL:   [ 119.6, 1230.9],  // estremi del filetto sopra il sottotitolo
-      ruleR:   [2440.4, 1230.9],
-      mark:    [ 142.9,  141.9],  // centro del logo nella nav
-      topBand: 236,               // sotto questa quota inizia il brandmark
+      /* Sullo schermo del portatile i fotogrammi mostrano uno screenshot
+         VERO del sito (1907×928, una finestra di Chrome su un monitor
+         1920×1080), proiettato in ogni fotogramma con la prospettiva
+         dello schermo, tracciata sul render originale. Nell'ultimo
+         fotogramma lo screenshot occupa x 0…1907, y 76…1004 dello spazio
+         1920×1080: con object-fit:cover su una finestra 1920×928 il filmato
+         finisce esattamente come la pagina vera, e lo scambio è una
+         dissolvenza fra due immagini uguali.
+         Le ancore qui sotto vengono da quello screenshot, convertite nelle
+         stesse grandezze del DOM (riquadri, non inchiostro): titolo dalla
+         sua interlinea misurata (130px → corpo 136,8) e dalle metriche di
+         Inter Tight, filetto dalla riga di pixel, logo dal suo cerchio.
+         Poi +76 in verticale e ×4/3 verso lo spazio 2560×1440. */
+      titleTL: [ 120.0,  520.1],  // angoli del blocco titolo
+      titleBR: [2422.7, 1040.1],
+      ruleL:   [ 120.0, 1112.0],  // estremi del filetto sopra il sottotitolo
+      ruleR:   [2422.7, 1112.0],
+      mark:    [ 141.3,  148.0],  // centro del logo nella nav
+      topBand: 239,               // sotto questa quota inizia il brandmark
       vEnd:    0.94,              // qui il filmato è all'ultimo fotogramma
 
       /* --- il wordmark d'apertura, da ridisegnare come testo vero ---
