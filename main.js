@@ -145,11 +145,13 @@
     laptop: {
       src:     'assets/video/intro-desktop.mp4?v=' + VIDEO_V,
       fw: 2560, fh: 1440,     // risoluzione di QUESTO filmato
-      /* Lo stesso filmato diviso in fotogrammi: 168 WebP (qualità 0,85) per
-         serie, 000.webp … 167.webp, in due larghezze. Le coordinate qui sotto
-         restano in pixel del filmato 2560×1440: entrambe le serie hanno le
-         sue stesse proporzioni, e object-fit:cover le stende uguale. */
-      frames:  { base: 'assets/frames/desktop/', count: 168, sizes: [1920, 2560], v: FRAMES_V },
+      /* Lo stesso filmato diviso in fotogrammi: 168 WebP per serie,
+         000.webp … 167.webp. Due serie nitide (qualità 0,85) e una leggera a
+         640 (qualità 0,8) che fa da rete di sicurezza, vedi frameSource. Le
+         coordinate qui sotto restano in pixel del filmato 2560×1440: tutte
+         le serie hanno le sue stesse proporzioni, e object-fit:cover le
+         stende uguale. */
+      frames:  { base: 'assets/frames/desktop/', count: 168, sizes: [1920, 2560], low: 640, v: FRAMES_V },
       /* Terzo render dello stesso setup, consegnato a 3832×2160 e qui ridotto
          a 2560×1440: le ancore già validate sono state riportate nel nuovo
          spazio e ricontrollate sul fotogramma finale — il logo nav cade a
@@ -414,10 +416,10 @@
   /* --- Motore 2: il filmato diviso in fotogrammi ----------------------------
 
      Il filmato del laptop esiste anche come sequenza di immagini WebP, una
-     per fotogramma (assets/frames/desktop/1920 e /2560, estratte dallo stesso
-     MP4). Lo scroll non chiede più al browser di "cercare" dentro un video:
-     sceglie quale immagine disegnare. È il metodo delle pagine prodotto di
-     Apple, e dà tre cose che il <video> non può dare:
+     per fotogramma (assets/frames/desktop/, estratte dallo stesso MP4). Lo
+     scroll non chiede più al browser di "cercare" dentro un video: sceglie
+     quale immagine disegnare. È il metodo delle pagine prodotto di Apple, e
+     dà tre cose che il <video> non può dare:
 
        · ogni fotogramma è indipendente: mostrarne uno qualsiasi, avanti o
          indietro, costa uguale — nessun keyframe da cui ripartire, nessuna
@@ -428,15 +430,19 @@
          posizione esatta: la corsa diventa continua invece che a gradini di
          un trentesimo di secondo.
 
-     Come:
-       · le immagini si scaricano tutte all'avvio, sei alla volta, prima
-         quelle vicine a dove si è; restano in memoria COMPRESSE (7-10 MB);
-       · si decodificano in bitmap solo quelle attorno alla posizione, in
-         anticipo nella direzione di marcia, fuori dal thread principale
-         (createImageBitmap): una finestra dimensionata in megabyte, perché
-         tutte e 168 decodificate occuperebbero più di un gigabyte;
-       · due serie: 1920 per gli schermi normali, 2560 per i retina e i
-         monitor grandi. Ognuno scarica solo la sua.
+     Le serie sono tre:
+       · 1920 e 2560, nitide: ognuno scarica solo quella che copre i pixel
+         fisici del suo schermo. Decodificate costano 8-15 MB l'una, quindi
+         in memoria ne sta solo una FINESTRA attorno alla posizione;
+       · 640, leggerissima (1,8 MB in tutto): decodificata per intero e
+         tenuta sempre. È la rete di sicurezza. Se lo scroll corre più veloce
+         di quanto si riesca a preparare la versione nitida — un colpo di
+         rotella deciso, un'inversione improvvisa, il ritorno dal sito
+         dentro l'intro — al suo posto si disegna questa, nella posizione
+         giusta. In movimento si legge come una sfocatura di moto; da fermi
+         la versione nitida arriva in pochi millesimi. L'immagine non resta
+         mai indietro rispetto alla pagina, ed è questo che prima si
+         percepiva come scatto.
 
      Se le immagini non arrivano, si torna al <video> senza che chi guarda
      se ne accorga. */
@@ -448,13 +454,12 @@
     if (!ctx || !F) return videoSource();
 
     const N = F.count;
-    /* Memoria per le bitmap decodificate. Più è grande, più fotogrammi sono
-       pronti in anticipo e più veloce si può scorrere senza mai restare
-       indietro. Dove il browser dice quanta RAM c'è (Chrome, Edge) se ne
-       prende di più sui computer che ne hanno; altrove una via di mezzo. Si
-       libera tutta a intro finita. */
+    /* Memoria per la finestra di bitmap nitide (la serie leggera, sempre
+       intera, occupa a parte circa 150 MB). Più è grande, più fotogrammi
+       sono pronti attorno alla posizione. Dove il browser dice quanta RAM
+       c'è (Chrome, Edge) se ne prende di più sui computer che ne hanno. */
     const MB = 1024 * 1024, ram = navigator.deviceMemory || 0;
-    const BUDGET = ram >= 8 ? 400 * MB : ram ? 200 * MB : 280 * MB;
+    const BUDGET = ram >= 8 ? 300 * MB : ram ? 150 * MB : 220 * MB;
     const FETCH  = 6;                   // download in parallelo
     /* Decodifiche in parallelo. Misurato: decodificare un WebP 1920×1080
        costa decine di millisecondi su un solo core, ma il browser le
@@ -463,32 +468,35 @@
        pagina. */
     const DECODE = Math.max(2, Math.min(6, (navigator.hardwareConcurrency || 4) - 2));
     const BLEND  = true;                // dissolvenza fra fotogrammi adiacenti
+    const KEEP   = 14;                  // nitidi tenuti a intro finita: gli ultimi
 
-    /* Quale serie: la più piccola che copre i pixel FISICI su cui il quadro
-       verrà steso da object-fit:cover. Su un portatile 1440×900 basta la
-       1920; su un retina, dove lo stesso quadro è largo più di tremila pixel
-       fisici, serve la 2560. Si decide una volta: cambiare serie a metà
-       vorrebbe dire riscaricare tutto. Il canvas ha la risoluzione delle
-       bitmap (sotto), ed è il compositore a stenderlo — come faceva col video. */
+    /* Quale serie nitida: la più piccola che copre i pixel FISICI su cui il
+       quadro verrà steso da object-fit:cover. Su un portatile 1440×900 basta
+       la 1920; su un retina, dove lo stesso quadro è largo più di tremila
+       pixel fisici, serve la 2560. Si decide una volta: cambiare serie a metà
+       vorrebbe dire riscaricare tutto.
+
+       Le bitmap restano della misura dell'immagine, senza ridimensionarle in
+       decodifica. Misurato: chiedere a createImageBitmap di ridurre un WebP
+       1920 a 1600 porta la decodifica da 11 a 118 ms (il ricampionamento è
+       sul processore). Ridurre o ingrandire lo fa la GPU, gratis, quando
+       disegna nel canvas e quando stende il canvas sullo schermo. */
     const s0   = Math.max(innerWidth / ref.fw, innerHeight / ref.fh) || 1;
     const need = ref.fw * s0 * (devicePixelRatio || 1);
     const SET  = need > F.sizes[0] * 1.1 ? F.sizes[1] : F.sizes[0];
-    /* Le bitmap restano della misura dell'immagine, senza ridimensionarle in
-       decodifica. Misurato: chiedere a createImageBitmap di ridurre un WebP
-       1920 a 1600 porta la decodifica da 11 a 118 ms (il ricampionamento è
-       sul processore), cioè dieci volte meno fotogrammi pronti al secondo.
-       Ridurre lo fa la GPU, gratis, quando stende il canvas. */
     const W = SET, H = Math.round(W * ref.fh / ref.fw);
     canvas.width = W; canvas.height = H;
     const cap = Math.max(8, Math.min(64, Math.floor(BUDGET / (W * H * 4))));
-    const url = i => F.base + SET + '/' + String(i).padStart(3, '0') + '.webp?v=' + F.v;
+    const urlOf = (set, i) => F.base + set + '/' + String(i).padStart(3, '0') + '.webp?v=' + F.v;
 
-    const blobs    = new Array(N).fill(null);   // immagini scaricate, ancora compresse
-    const tries    = new Uint8Array(N);
-    const fetching = new Set(), decoding = new Set();
-    const cache    = new Map();                 // indice → bitmap pronta da disegnare
-    let nLoaded = 0, dead = false, ready = false;
-    let want = 0, dir = 1, lastDrawn = '', misses = 0, draws = 0;
+    // Due livelli per ogni fotogramma: l = leggero (640), h = nitido.
+    const L = { set: F.low,  src: new Array(N).fill(null), bmp: new Array(N).fill(null), tries: new Uint8Array(N) };
+    const Hd = { set: SET,   src: new Array(N).fill(null), tries: new Uint8Array(N) };
+    const cache = new Map();            // nitidi decodificati: indice → bitmap
+    const fetching = new Set(), decoding = new Set();   // chiavi 'l12', 'h12'
+    let nLow = 0, nHd = 0, dead = false, ready = false;
+    let want = 0, dir = 1, turn = 0, lastDrawn = '';
+    let draws = 0, soft = 0, stuck = 0;  // per il pannello ?diag=1
 
     introEl.classList.add('is-frames');
 
@@ -496,6 +504,7 @@
       if (dead) return;
       dead = true;
       cache.forEach(release); cache.clear();
+      L.bmp.forEach(release);
       introEl.classList.remove('is-frames');
       // Il motore 1 prende il posto di questo, con gli stessi agganci.
       const v = videoSource();
@@ -504,17 +513,21 @@
       if (v.onUpdate) v.onUpdate();
     }
 
-    /* La finestra: asimmetrica, qualche fotogramma alle spalle (per i
-       piccoli ritorni del trackpad) e il grosso davanti, nella direzione in
-       cui si sta andando. `around` la percorre per priorità: prima quello
-       sotto gli occhi, poi allargandosi, prima in avanti e poi indietro. */
+    /* La finestra dei nitidi. Prima era quasi tutta davanti (80/20), e la
+       differenza fra avanti e indietro si sentiva: invertendo la direzione
+       se ne trovavano pronti una decina, e la finestra veniva buttata e
+       ricostruita a ogni inversione. Ora è 60/40: davanti resta di più,
+       perché è dove si sta andando, ma alle spalle ce n'è abbastanza per
+       tornare indietro senza aspettare. */
     function windowOf() {
       const c = Math.min(N - 1, Math.max(0, Math.round(want)));
-      const back = Math.max(2, Math.floor(cap * 0.2)), ahead = cap - back - 1;
+      const back = Math.max(3, Math.floor(cap * 0.4)), ahead = cap - back - 1;
       const lo = dir >= 0 ? c - back : c - ahead;
       const hi = dir >= 0 ? c + ahead : c + back;
       return [Math.max(0, lo), Math.min(N - 1, hi), c];
     }
+    // Gli indici della finestra in ordine di urgenza: quello sotto gli occhi,
+    // poi allargandosi, prima nella direzione di marcia.
     function around(test) {
       const [lo, hi, c] = windowOf();
       for (let d = 0; d <= hi - lo; d++) {
@@ -525,20 +538,36 @@
       return -1;
     }
 
-    // Prima quelle che servono adesso, poi tutte le altre in ordine.
+    /* Cosa scaricare adesso, in quest'ordine:
+         1. i due nitidi sotto gli occhi — il primo fotogramma, quello su cui
+            si resta fermi a leggere "scorri per entrare", deve essere nitido
+            subito;
+         2. tutta la serie leggera: 1,8 MB, e da lì in poi qualunque punto
+            del filmato è disegnabile;
+         3. i nitidi della finestra, per urgenza;
+         4. tutti gli altri nitidi, in ordine. */
     function nextFetch() {
-      const free = i => !blobs[i] && !fetching.has(i) && tries[i] < 3;
-      const i = around(free);
-      if (i >= 0) return i;
-      for (let k = 0; k < N; k++) if (free(k)) return k;
-      return -1;
+      const freeH = i => !Hd.src[i] && !fetching.has('h' + i) && Hd.tries[i] < 3;
+      const freeL = i => !L.src[i] && !fetching.has('l' + i) && L.tries[i] < 3;
+      const c = Math.min(N - 1, Math.max(0, Math.round(want)));
+      for (const i of [c, Math.min(N - 1, c + 1)]) if (freeH(i)) return ['h', i];
+      for (let k = 0; k < N; k++) if (freeL(k)) return ['l', k];
+      const i = around(freeH);
+      if (i >= 0) return ['h', i];
+      for (let k = 0; k < N; k++) if (freeH(k)) return ['h', k];
+      return null;
     }
-    const nextDecode = () => around(i => blobs[i] && !cache.has(i) && !decoding.has(i));
+    const nextDecode = () => {
+      // i leggeri appena arrivati passano davanti: costano un millisecondo
+      for (let k = 0; k < N; k++) if (L.src[k] && !L.bmp[k] && !decoding.has('l' + k)) return ['l', k];
+      const i = around(i => Hd.src[i] && !cache.has(i) && !decoding.has('h' + i));
+      return i >= 0 ? ['h', i] : null;
+    };
 
     function pump() {
       if (dead) return;
-      for (let i; fetching.size < FETCH && (i = nextFetch()) >= 0;) load(i);
-      for (let i; decoding.size < DECODE && (i = nextDecode()) >= 0;) decode(i);
+      for (let j; fetching.size < FETCH && (j = nextFetch());) load(j[0], j[1]);
+      for (let j; decoding.size < DECODE && (j = nextDecode());) decode(j[0], j[1]);
     }
 
     /* Online si scarica con fetch e si tiene il file compresso: decodificarlo
@@ -547,31 +576,32 @@
        fetch, e allora — invece di ripiegare in silenzio sul video — si usa
        un'<img>, che dal disco carica sempre. */
     const fromDisk = location.protocol === 'file:';
-    const get = i => fromDisk
+    const get = url => fromDisk
       ? new Promise((ok, ko) => {
           const im = new Image();
           im.decoding = 'async';
           im.onload = () => ok(im); im.onerror = ko;
-          im.src = url(i);
+          im.src = url;
         })
-      : fetch(url(i)).then(r => { if (!r.ok) throw new Error('http ' + r.status); return r.blob(); });
+      : fetch(url).then(r => { if (!r.ok) throw new Error('http ' + r.status); return r.blob(); });
 
-    function load(i) {
-      fetching.add(i);
-      tries[i]++;
-      get(i)
-        .then(b => {
-          fetching.delete(i);
-          if (dead) return;
-          blobs[i] = b; nLoaded++;
-          pump();
-        }, () => {
-          fetching.delete(i);
-          if (dead) return;
-          // tre tentativi a vuoto sullo stesso fotogramma: la sequenza non è
-          // affidabile (file mancanti, rete che cade), meglio il video intero
-          if (tries[i] >= 3) fail(); else pump();
-        });
+    function load(t, i) {
+      const lvl = t === 'l' ? L : Hd, key = t + i;
+      fetching.add(key);
+      lvl.tries[i]++;
+      get(urlOf(lvl.set, i)).then(b => {
+        fetching.delete(key);
+        if (dead) return;
+        lvl.src[i] = b;
+        if (t === 'l') nLow++; else nHd++;
+        pump();
+      }, () => {
+        fetching.delete(key);
+        if (dead) return;
+        // tre tentativi a vuoto sullo stesso fotogramma: la sequenza non è
+        // affidabile (file mancanti, rete che cade), meglio il video intero
+        if (lvl.tries[i] >= 3) fail(); else pump();
+      });
     }
 
     // Da un file compresso, o — da disco — da un'<img>: se il browser non sa
@@ -579,32 +609,37 @@
     const toBitmap = src => src instanceof Blob
       ? createImageBitmap(src)
       : src.decode().then(() => createImageBitmap(src)).catch(() => src);
-    const release = b => { if (b && b.close) b.close(); };
+    function release(b) { if (b && b.close) b.close(); }
 
-    function decode(i) {
-      decoding.add(i);
-      toBitmap(blobs[i]).then(bm => {
-        decoding.delete(i);
-        const [lo, hi] = windowOf();
-        if (dead || i < lo || i > hi) { release(bm); pump(); return; }
-        cache.set(i, bm);
-        trim();
-        if (!ready) { ready = true; if (S.onUpdate) S.onUpdate(); }
+    function decode(t, i) {
+      const key = t + i, lvl = t === 'l' ? L : Hd;
+      decoding.add(key);
+      toBitmap(lvl.src[i]).then(bm => {
+        decoding.delete(key);
+        if (dead) { release(bm); return; }
+        if (t === 'l') {
+          L.bmp[i] = bm;
+        } else {
+          const [lo, hi] = windowOf();
+          if (i < lo || i > hi) { release(bm); pump(); return; }
+          cache.set(i, bm);
+          trim();
+        }
+        if (!ready && (cache.has(0) || L.bmp[0])) { ready = true; if (S.onUpdate) S.onUpdate(); }
         const i0 = Math.floor(want);
         if (i === i0 || i === i0 + 1 || !lastDrawn) draw();
         pump();
       }, () => {
         // immagine illeggibile: la si scarica di nuovo
-        decoding.delete(i);
-        if (blobs[i]) { blobs[i] = null; nLoaded--; }
+        decoding.delete(key);
+        lvl.src[i] = null;
+        if (t === 'l') nLow--; else nHd--;
         pump();
       });
     }
 
     /* Prima tutto ciò che è fuori dalla finestra, poi — solo se serve ancora
-       spazio — il più lontano. L'ordine conta: la finestra è asimmetrica, e
-       tagliare per pura distanza butterebbe via proprio i fotogrammi appena
-       preparati in avanti per tenere quelli alle spalle. */
+       spazio — il più lontano. */
     function trim() {
       const [lo, hi] = windowOf();
       for (const k of [...cache.keys()]) {
@@ -620,29 +655,36 @@
 
     /* --- il disegno --------------------------------------------------------
        Sincrono, dentro apply(): è questo che lega l'immagine allo scroll
-       nello stesso fotogramma della pagina. Se un fotogramma non è ancora
-       pronto si mostra il più vicino che c'è; se non c'è niente si lascia il
-       canvas com'è, che è comunque l'ultima immagine giusta. */
+       nello stesso fotogramma della pagina. Per ognuno dei due fotogrammi
+       della dissolvenza si usa il nitido se c'è, altrimenti il leggero: le
+       due versioni si mescolano senza problemi, perché drawImage le stende
+       comunque alla stessa misura. */
+    const pick = i => cache.get(i) || L.bmp[i] || null;
     function draw() {
       if (dead) return;
       const i0 = Math.min(N - 1, Math.floor(want)), i1 = Math.min(N - 1, i0 + 1);
       let a = BLEND ? Math.round((want - i0) * 48) / 48 : (want - i0 < 0.5 ? 0 : 1);
-      let A = cache.get(i0), B = cache.get(i1), ia = i0, ib = i1;
+      if (a >= 1) a = 1;
+      let A = pick(i0), B = pick(i1), ia = i0, ib = i1;
       draws++;
-      if (!A && !B) misses++;
+      const main = a < 0.5 ? i0 : i1;
+      if (!cache.has(main)) soft++;
       if (!A || !B) {
         if (!A && !B) {
-          // il più vicino disponibile, entro pochi fotogrammi
-          for (let d = 1; d <= 6 && !A; d++) {
-            if (cache.has(i0 - d)) { A = cache.get(i0 - d); ia = i0 - d; }
-            else if (cache.has(i1 + d)) { A = cache.get(i1 + d); ia = i1 + d; }
+          // solo prima che arrivi la serie leggera: il più vicino che c'è
+          stuck++;
+          for (let d = 1; d <= 8 && !A; d++) {
+            if (pick(i0 - d)) { A = pick(i0 - d); ia = i0 - d; }
+            else if (pick(i1 + d)) { A = pick(i1 + d); ia = i1 + d; }
           }
           if (!A) return;
         } else if (!A) { A = B; ia = ib; }
         a = 0;
       }
-      if (a >= 1) { A = B; ia = ib; a = 0; }
-      const k = ia + '|' + (a ? ib + '|' + a : '');
+      if (a === 1) { A = B; ia = ib; a = 0; }
+      // la chiave ricorda anche QUALE versione è a schermo: quando arriva il
+      // nitido al posto del leggero, si ridisegna
+      const k = ia + (cache.has(ia) ? 'h' : 'l') + (a ? '|' + ib + (cache.has(ib) ? 'h' : 'l') + '|' + a : '');
       if (k === lastDrawn) return;
       lastDrawn = k;
       try {
@@ -661,26 +703,37 @@
     S.ready = () => ready;
     S.show = q => {
       if (dead) return;
-      const w = q * (N - 1);
-      if (Math.abs(w - want) > 0.02) dir = w > want ? 1 : -1;
+      const w = q * (N - 1), dw = w - want;
+      /* La direzione cambia solo dopo un movimento contrario di almeno un
+         fotogramma e mezzo. I piccoli ritorni del trackpad (e il rimbalzo
+         finale di un gesto) altrimenti ribaltavano la finestra avanti e
+         indietro, buttando ogni volta fotogrammi appena preparati. */
+      if (dw * dir < 0) {
+        turn += Math.abs(dw);
+        if (turn > 1.5) { dir = -dir; turn = 0; }
+      } else if (dw) turn = 0;
       want = w;
       draw();
       pump();
     };
-    /* A intro finita le bitmap in memoria non servono più: si liberano
-       (sono fino a 200 MB). Le immagini compresse restano: se si risale, il
-       canvas ha ancora l'ultima immagine e la finestra si ricostruisce in
-       una frazione di secondo, senza riscaricare nulla. */
+    /* A intro finita i nitidi in memoria si liberano — tranne gli ultimi,
+       quelli su cui si rientra risalendo dal sito: il ritorno dentro l'intro
+       comincia nitido e fluido, mentre la finestra si ricostruisce alle
+       spalle. La serie leggera resta tutta. */
     S.release = () => {
-      cache.forEach(release); cache.clear(); lastDrawn = '';
+      for (const k of [...cache.keys()]) {
+        if (k < N - KEEP) { release(cache.get(k)); cache.delete(k); }
+      }
+      lastDrawn = '';
     };
     // per il pannello ?diag=1
-    S.debug = () => ({ want, dir, cap, loaded: nLoaded, decoding: [...decoding], fetching: [...fetching],
-                       window: windowOf(), keys: [...cache.keys()].sort((a, b) => a - b) });
+    S.debug = () => ({ want, dir, cap, low: nLow, hd: nHd, decoding: [...decoding], fetching: [...fetching],
+                       window: windowOf(), keys: [...cache.keys()].sort((a, b) => a - b),
+                       lowReady: L.bmp.filter(Boolean).length });
     S.stats = () =>
       cache.size + '/' + cap + ' @' + W + ' (' + DECODE + ' in parallelo)' +
-      ' · scaricati ' + nLoaded + '/' + N +
-      ' · ' + (lastDrawn || '-') + ' · mancati ' + misses + '/' + draws;
+      ' · scaricati ' + nHd + '+' + nLow + '/' + N +
+      ' · ' + (lastDrawn || '-') + ' · leggeri ' + soft + ' fermi ' + stuck + ' su ' + draws;
     return S;
   }
 
@@ -2035,6 +2088,7 @@
         glGate = live;
         document.documentElement.classList.toggle('intro-idle', !live);
         if (marqueeTween) live ? marqueeTween.play() : marqueeTween.pause();
+        liquidTweens.forEach(t => live ? t.play() : t.pause());
       }
 
       /* 6 — fine corsa: l'intro esce di scena e la pagina torna pulita.
@@ -2184,6 +2238,7 @@
   function disableIntro() {
     glGate = true;
     if (marqueeTween) marqueeTween.play();
+    liquidTweens.forEach(t => t.play());
     document.documentElement.classList.remove('intro-idle');
     document.documentElement.classList.remove('has-intro');
     document.documentElement.style.removeProperty('--intro-scroll');
@@ -2521,19 +2576,23 @@
     if (!turb || !disp || !hasGSAP || reduced) return;
 
     // quanto il rumore sposta i pixel: l'ampiezza del "flusso"
-    gsap.to(disp, {
+    liquidTweens.push(gsap.to(disp, {
       attr: { scale: 30 }, duration: 3.4, ease: 'sine.inOut',
       yoyo: true, repeat: -1
-    });
+    }));
 
     // la frequenza del rumore varia lentamente: cambia la forma della
     // distorsione, non solo la sua intensità
     const freq = { v: 0.010 };
-    gsap.to(freq, {
+    liquidTweens.push(gsap.to(freq, {
       v: 0.024, duration: 5.5, ease: 'sine.inOut', yoyo: true, repeat: -1,
       onUpdate: () => turb.setAttribute('baseFrequency', `${freq.v} ${freq.v * 3.3}`)
-    });
+    }));
   }
+  /* In pausa finché il filmato copre la hero (vedi apply): ogni passo
+     riscrive un filtro di turbolenza che il browser ricalcola sul processore,
+     ed era lavoro fatto per nessuno nel mezzo dello scroll dell'intro. */
+  const liquidTweens = [];
 
   /* Bagliore che segue il mouse dentro le card: il CSS legge --mx/--my. */
   function cardGlow() {
@@ -2576,17 +2635,38 @@
     });
   }
 
+  /* L'ultimo istante in cui la pagina si è mossa: serve a scegliere un
+     momento di quiete per i lavori pesanti e una tantum. */
+  let lastScrollAt = 0;
+  addEventListener('scroll', () => { lastScrollAt = performance.now(); }, { passive: true });
+  function whenStill(fn) {
+    const check = () => (performance.now() - lastScrollAt > 250 ? fn() : setTimeout(check, 120));
+    check();
+  }
+
+  let bgStarted = false;
   function loadBackground(eager) {
-    if (reduced) return;
+    if (reduced || bgStarted) return;
 
     // Rispetta chi ha attivato il risparmio dati e chi ha poca memoria:
     // scaricare mezzo megabyte per un fondale sarebbe sgarbato.
     const conn = navigator.connection;
     if (conn && conn.saveData) return;
     if (navigator.deviceMemory && navigator.deviceMemory < 4) return;
+    bgStarted = true;
 
+    /* Accendere la scena costa: creare il contesto WebGL e compilare gli
+       shader sono decine di millisecondi sul thread principale, una volta
+       sola. Prima succedeva al primo disegno, cioè a tre quarti dell'intro,
+       nel pieno dello scroll: un singhiozzo a metà corsa. Ora si fa in un
+       momento di quiete (whenStill) e con un disegno di prova subito dopo,
+       così quando la scena si accende davvero è già tutto pronto. */
     const go = () => loadScript('vendor/three.min.js')
-      .then(() => { if (initGL()) renderLoop(); })
+      .then(() => whenStill(() => {
+        if (!initGL()) return;
+        try { renderer.compile(scene, camera); renderer.render(scene, camera); } catch (err) { /* si riprova al primo disegno */ }
+        renderLoop();
+      }))
       .catch(() => { /* nessuno sfondo: la pagina funziona identica */ });
 
     // Con l'intro non si può aspettare: la sfera deve già girare quando il
@@ -2674,6 +2754,11 @@
     cursor();
     smoothScroll();
     cardGlow();
+
+    // Con l'intro, la libreria 3D si scarica e si prepara già sotto al
+    // preloader, quando non si può ancora scorrere: niente di pesante deve
+    // capitare dopo, mentre il filmato è in corsa.
+    if (introOn) loadBackground(true);
     marquee();
     liquidLogo();
 

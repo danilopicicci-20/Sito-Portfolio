@@ -257,6 +257,12 @@ html.has-intro .intro.is-done{ display:none; }
    animata e qualunque altro movimento della pagina sono lavoro sprecato che
    ruba fotogrammi al video. Si fermano finché non serve rivederli. */
 html.intro-idle .grain{ animation:none; }
+/* Stessa logica per le animazioni dentro la hero, che sta sotto al filmato:
+   l'onda del brandmark ridisegna a ogni fotogramma un filtro SVG di
+   turbolenza (calcolato dal processore), il puntino "disponibile" pulsa.
+   Nessuno le vede, e rubavano tempo proprio mentre si scorre. Ripartono a
+   tre quarti di corsa, ben prima che la hero venga scoperta. */
+html.intro-idle .hero__sticky *{ animation-play-state:paused; }
 
 /* Copre la fascia alta del filmato (la nav) quando lo schermo non ha le
    proporzioni del video. Vive DENTRO lo stage, quindi riceve la stessa
@@ -298,6 +304,7 @@ html.intro-idle .grain{ animation:none; }
    bilineare del fondo vero, senza nessuna immagine da scaricare. */
 .intro__wmpatch{
   position:absolute;
+  will-change:opacity;   /* come le scritte: la maschera composta non si ridipinge */
   background-image:linear-gradient(to bottom, #0e111c, #0d1320 50%, #0f1526);
   /* I bordi vanno sfumati o il rettangolo si legge. Orizzontalmente c'è poco
      margine (60px di fondo pulito accanto a 474px di scritta), quindi 9%;
@@ -328,6 +335,10 @@ html.intro-idle .grain{ animation:none; }
    è bianca e cotta nei pixel. */
 .intro__wmline{
   position:absolute; white-space:nowrap;
+  /* livello proprio: mentre si dissolvono (all'inizio della corsa, avanti e
+     indietro) cambia solo l'opacità, e i due drop-shadow larghi non vanno
+     ridipinti a ogni fotogramma */
+  will-change:opacity;
   font-family:var(--sans); font-weight:300; line-height:1;
   -webkit-background-clip:text; background-clip:text;
   color:transparent;
@@ -529,8 +540,16 @@ html.has-intro .hero__sticky{
 html.has-intro .hero__sticky,
 html.has-intro .nav,
 html.has-intro #scene{ transform-origin:0 0; }
-/* niente will-change qui: resterebbe attivo per tutta la visita, promuovendo
-   a livello di composizione tre elementi che dopo l'intro non si muovono più */
+/* will-change SOLO finché l'intro è in scena (.intro senza .is-done), non per
+   tutta la visita. Durante lo scambio la hero e la nav vengono scalate a
+   ogni fotogramma: senza un livello proprio, il browser ridipingeva da capo
+   a ogni passo un titolo da centocinquanta pixel, il brandmark col suo
+   filtro SVG e il resto della composizione — decine di millisecondi proprio
+   nel punto che deve essere più morbido. Con il livello proprio la GPU li
+   sposta come un'immagine. A intro finita la regola cade, e il testo viene
+   ridipinto una volta, nitido, alla sua scala vera. */
+html.has-intro .intro:not(.is-done) ~ main .hero__sticky,
+html.has-intro .intro:not(.is-done) ~ .nav{ will-change:transform; }
 
 /* logotipo "Fluid Studio": icona a cerchio (onda animata) + scritta */
 .brandmark{
