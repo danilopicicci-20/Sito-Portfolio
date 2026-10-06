@@ -126,10 +126,22 @@
      scoperto su Safari, spostato sui video. */
   const VIDEO_V = '20260918a';
 
+  /* Stessa regola per i fotogrammi del laptop (assets/frames/desktop/): se
+     vengono rigenerati — per esempio da un nuovo render — tenendo gli stessi
+     nomi, questo numero va cambiato. Vanno rigenerati anche quando cambia
+     intro-desktop.mp4: sono lo stesso filmato, fotogramma per fotogramma,
+     e le misure qui sotto valgono per entrambi. */
+  const FRAMES_V = '20261006a';
+
   const REF = {
     laptop: {
       src:     'assets/video/intro-desktop.mp4?v=' + VIDEO_V,
       fw: 2560, fh: 1440,     // risoluzione di QUESTO filmato
+      /* Lo stesso filmato diviso in fotogrammi: 168 WebP (qualità 0,85) per
+         serie, 000.webp … 167.webp, in due larghezze. Le coordinate qui sotto
+         restano in pixel del filmato 2560×1440: entrambe le serie hanno le
+         sue stesse proporzioni, e object-fit:cover le stende uguale. */
+      frames:  { base: 'assets/frames/desktop/', count: 168, sizes: [1920, 2560], v: FRAMES_V },
       /* Terzo render dello stesso setup, consegnato a 3832×2160 e qui ridotto
          a 2560×1440: le ancore già validate sono state riportate nel nuovo
          spazio e ricontrollate sul fotogramma finale — il logo nav cade a
@@ -289,13 +301,11 @@
      la stessa interfaccia (show / ready / kind), vedi frameSource e
      videoSource qui sotto.
 
-     Il desktop usa i fotogrammi decodificati da noi. Il <video> resta per il
+     Il desktop usa il filmato diviso in fotogrammi. Il <video> resta per il
      telefono — dove il filmato è a 720p, lo scrubbing è sempre stato fluido e
-     la memoria è poca — e come riserva automatica ovunque il primo motore non
-     possa partire o si inceppi. */
-  const canDecode = typeof VideoDecoder === 'function' &&
-                    typeof EncodedVideoChunk === 'function' &&
-                    typeof ReadableStream === 'function' &&
+     la memoria è poca — e come riserva automatica ovunque la sequenza di
+     immagini non possa partire o non arrivi. */
+  const canFrames = typeof createImageBitmap === 'function' &&
                     // solo con mouse o trackpad, cioè su un computer: un
                     // tablet usa anche lui il filmato del laptop, ma ha meno
                     // memoria per la finestra di fotogrammi, e lì il <video>
@@ -309,8 +319,8 @@
   if (introOn) {
     document.documentElement.classList.add('has-intro');
     // Il file scelto qui, e non con più <source>: così il telefono scarica
-    // solo il filmato del telefono e il desktop solo quello del laptop.
-    film = (ref.layout === 'laptop' && canDecode) ? frameSource(ref.src) : videoSource();
+    // solo il filmato del telefono e il desktop solo i suoi fotogrammi.
+    film = (ref.layout === 'laptop' && ref.frames && canFrames) ? frameSource() : videoSource();
   }
 
   /* Sblocco del buffer — è questo il punto in cui iOS si comporta come nessun
@@ -393,109 +403,91 @@
     return S;
   }
 
-  /* --- Motore 2: i fotogrammi decodificati da noi (WebCodecs) ---------------
+  /* --- Motore 2: il filmato diviso in fotogrammi ----------------------------
 
-     Misurato, non supposto. Su questo file (2560×1440, un keyframe ogni due
-     fotogrammi) una ricerca del <video> costa 15-60 ms e consegna il
-     fotogramma in modo asincrono rispetto al resto della pagina. Il decoder
-     hardware dello stesso computer, chiamato direttamente, ne decodifica uno
-     ogni 2,2 ms quando glieli si passa in fila — l'intero filmato in meno di
-     mezzo secondo — e restituisce ciascuno con UN SOLO fotogramma di
-     ritardo. Quello che costa è fermarsi e svuotarlo (flush): 25-60 ms ogni
-     volta, ed è esattamente ciò che fa il <video> a ogni ricerca.
+     Il filmato del laptop esiste anche come sequenza di immagini WebP, una
+     per fotogramma (assets/frames/desktop/1920 e /2560, estratte dallo stesso
+     MP4). Lo scroll non chiede più al browser di "cercare" dentro un video:
+     sceglie quale immagine disegnare. È il metodo delle pagine prodotto di
+     Apple, e dà tre cose che il <video> non può dare:
 
-     Da qui il metodo:
-       · il file si scarica una volta sola, in streaming, e le sue tabelle
-         (dove sta ogni fotogramma, quanto pesa, quali sono keyframe) si
-         leggono qui — è un MP4 normale, lo stesso di prima;
-       · il decoder viene alimentato di continuo, in anticipo, nella
-         direzione in cui si sta scorrendo, senza mai fermarlo: tutti i
-         keyframe di questo file sono IDR, quindi si può saltare da un punto
-         all'altro senza svuotarlo. Il flush resta solo per spremere l'ultimo
-         fotogramma quando la finestra è completa, cioè lontano da quello
-         sotto gli occhi;
-       · ogni fotogramma decodificato viene copiato subito in una bitmap già
-         alla risoluzione dello schermo, e il decoder viene liberato (ne
-         trattiene al massimo una ventina, poi si blocca);
-       · si tiene in memoria una FINESTRA di fotogrammi attorno alla
-         posizione, dimensionata in megabyte e non in numero;
-       · il disegno avviene nel canvas, in modo sincrono, dentro lo stesso
-         giro in cui GSAP muove tutto il resto: nessun ritardo fra lo scroll
-         e l'immagine, nessuna attesa del decoder;
+       · ogni fotogramma è indipendente: mostrarne uno qualsiasi, avanti o
+         indietro, costa uguale — nessun keyframe da cui ripartire, nessuna
+         ricerca da 15-60 ms;
+       · il disegno è sincrono, dentro lo stesso giro in cui GSAP muove il
+         resto della pagina: l'immagine non arriva "quando arriva";
        · fra due fotogrammi si disegna la loro dissolvenza, pesata sulla
          posizione esatta: la corsa diventa continua invece che a gradini di
          un trentesimo di secondo.
 
-     Qualunque intoppo — browser senza WebCodecs, codec non supportato,
-     errore del decoder, rete — e si passa al motore 1 senza che chi guarda
+     Come:
+       · le immagini si scaricano tutte all'avvio, sei alla volta, prima
+         quelle vicine a dove si è; restano in memoria COMPRESSE (7-10 MB);
+       · si decodificano in bitmap solo quelle attorno alla posizione, in
+         anticipo nella direzione di marcia, fuori dal thread principale
+         (createImageBitmap): una finestra dimensionata in megabyte, perché
+         tutte e 168 decodificate occuperebbero più di un gigabyte;
+       · due serie: 1920 per gli schermi normali, 2560 per i retina e i
+         monitor grandi. Ognuno scarica solo la sua.
+
+     Se le immagini non arrivano, si torna al <video> senza che chi guarda
      se ne accorga. */
-  function frameSource(url) {
+  function frameSource() {
     const S = { kind: 'frames', onUpdate: null };
+    const F = ref.frames;
     const canvas = document.getElementById('introFrames');
     const ctx = canvas && canvas.getContext('2d', { alpha: false });
-    if (!ctx) return videoSource();
+    if (!ctx || !F) return videoSource();
 
-    /* Quanta memoria può occupare la finestra di fotogrammi decodificati.
-       Un fotogramma a 2560×1440 pesa 14,7 MB, a 1280×720 un quarto: dare un
-       budget in megabyte invece che in numero lascia ai monitor piccoli una
-       finestra lunga, e a un retina — che vuole la risoluzione piena — una
-       finestra più corta ma ancora ampia rispetto a quanto si decodifica in
-       anticipo. */
-    const BUDGET = 200 * 1024 * 1024;
-    /* Fotogrammi consegnati al decoder e non ancora tornati. Pochi di
-       proposito: abbastanza da tenerlo sempre occupato, abbastanza pochi da
-       cambiare direzione all'istante quando lo scroll si inverte — e lontani
-       dal limite oltre il quale il decoder hardware si blocca. */
-    const FLIGHT = 6;
-    const BLEND  = true;       // dissolvenza fra fotogrammi adiacenti
+    const N = F.count;
+    /* Memoria per le bitmap decodificate. Più è grande, più fotogrammi sono
+       pronti in anticipo e più veloce si può scorrere senza mai restare
+       indietro. Dove il browser dice quanta RAM c'è (Chrome, Edge) se ne
+       prende di più sui computer che ne hanno; altrove una via di mezzo. Si
+       libera tutta a intro finita. */
+    const MB = 1024 * 1024, ram = navigator.deviceMemory || 0;
+    const BUDGET = ram >= 8 ? 400 * MB : ram ? 200 * MB : 280 * MB;
+    const FETCH  = 6;                   // download in parallelo
+    /* Decodifiche in parallelo. Misurato: decodificare un WebP 1920×1080
+       costa decine di millisecondi su un solo core, ma il browser le
+       distribuisce sui core liberi — con sei in parallelo il tempo per
+       fotogramma scende a un sesto. Si lasciano due core al resto della
+       pagina. */
+    const DECODE = Math.max(2, Math.min(6, (navigator.hardwareConcurrency || 4) - 2));
+    const BLEND  = true;                // dissolvenza fra fotogrammi adiacenti
 
-    let buf = new Uint8Array(0), got = 0, loaded = false;
-    let T = null;              // tabelle dei campioni, vedi readMoov
-    let dec = null, dead = false;
-    let cur = -1;              // prossimo campione che continua la sequenza (-1: serve un keyframe)
-    let flushing = false;
-    const flight = new Set();  // fotogrammi in volo dentro il decoder
-    let cw = 0, ch = 0, cap = 8;
-    const cache = new Map();   // indice di fotogramma → bitmap (o canvas)
-    let want = 0, dir = 1, lastDrawn = '', misses = 0, draws = 0, lastOut = 0;
-    let bitmapOk = typeof createImageBitmap === 'function';
+    /* Quale serie: la più piccola che copre i pixel FISICI su cui il quadro
+       verrà steso da object-fit:cover. Su un portatile 1440×900 basta la
+       1920; su un retina, dove lo stesso quadro è largo più di tremila pixel
+       fisici, serve la 2560. Si decide una volta: cambiare serie a metà
+       vorrebbe dire riscaricare tutto. Il canvas ha la risoluzione delle
+       bitmap (sotto), ed è il compositore a stenderlo — come faceva col video. */
+    const s0   = Math.max(innerWidth / ref.fw, innerHeight / ref.fh) || 1;
+    const need = ref.fw * s0 * (devicePixelRatio || 1);
+    const SET  = need > F.sizes[0] * 1.1 ? F.sizes[1] : F.sizes[0];
+    /* Le bitmap restano della misura dell'immagine, senza ridimensionarle in
+       decodifica. Misurato: chiedere a createImageBitmap di ridurre un WebP
+       1920 a 1600 porta la decodifica da 11 a 118 ms (il ricampionamento è
+       sul processore), cioè dieci volte meno fotogrammi pronti al secondo.
+       Ridurre lo fa la GPU, gratis, quando stende il canvas. */
+    const W = SET, H = Math.round(W * ref.fh / ref.fw);
+    canvas.width = W; canvas.height = H;
+    const cap = Math.max(8, Math.min(64, Math.floor(BUDGET / (W * H * 4))));
+    const url = i => F.base + SET + '/' + String(i).padStart(3, '0') + '.webp?v=' + F.v;
+
+    const blobs    = new Array(N).fill(null);   // immagini scaricate, ancora compresse
+    const tries    = new Uint8Array(N);
+    const fetching = new Set(), decoding = new Set();
+    const cache    = new Map();                 // indice → bitmap pronta da disegnare
+    let nLoaded = 0, dead = false, ready = false;
+    let want = 0, dir = 1, lastDrawn = '', misses = 0, draws = 0;
 
     introEl.classList.add('is-frames');
-
-    /* Il canvas ha le proporzioni del filmato e la risoluzione che serve
-       davvero sullo schermo: object-fit:cover lo stende come stendeva il
-       video, quindi ogni misura del raccordo resta valida. Mai più grande
-       del filmato (ingrandire qui non aggiunge nulla), mai più piccolo dei
-       pixel fisici che andrà a coprire. */
-    function size() {
-      // In una scheda aperta in background il viewport può valere 0 mentre
-      // la pagina si carica: in quel caso risoluzione piena, e il primo
-      // resize vero rimette le cose a posto.
-      const s0 = Math.max(innerWidth / ref.fw, innerHeight / ref.fh) || 1;
-      const f = Math.min(1, s0 * (devicePixelRatio || 1));
-      const w = Math.round(ref.fw * f), h = Math.round(ref.fh * f);
-      if (w === cw && h === ch) return;
-      // Cambio di risoluzione vero (non i pochi pixel della barra degli
-      // indirizzi): le bitmap vecchie sono della misura sbagliata.
-      const big = !cw || Math.abs(w - cw) / cw > 0.1;
-      cw = w; ch = h;
-      canvas.width = cw; canvas.height = ch;
-      cap = Math.max(8, Math.min(48, Math.floor(BUDGET / (cw * ch * 4))));
-      if (big) { cache.forEach(free); cache.clear(); }
-      lastDrawn = '';
-      draw();     // ridimensionare il canvas lo svuota: si ridisegna subito
-      pump();
-    }
-    const free = b => { if (b && b.close) b.close(); };
-    size();
-    addEventListener('resize', size);
 
     function fail() {
       if (dead) return;
       dead = true;
-      try { if (dec && dec.state !== 'closed') dec.close(); } catch (err) { /* già chiuso */ }
-      cache.forEach(free); cache.clear();
-      removeEventListener('resize', size);
+      cache.forEach(b => b.close()); cache.clear();
       introEl.classList.remove('is-frames');
       // Il motore 1 prende il posto di questo, con gli stessi agganci.
       const v = videoSource();
@@ -504,271 +496,96 @@
       if (v.onUpdate) v.onUpdate();
     }
 
-    /* --- download in streaming -------------------------------------------
-       Il moov (le tabelle) sta in testa al file, quindi si legge dopo i primi
-       due kilobyte; da lì ogni fotogramma è decodificabile appena i suoi byte
-       sono arrivati, senza aspettare la fine del download. */
-    fetch(url).then(res => {
-      if (!res.ok || !res.body) throw new Error('http ' + res.status);
-      buf = new Uint8Array(+res.headers.get('Content-Length') || (4 << 20));
-      const rd = res.body.getReader();
-      const step = r => {
-        if (dead) return;
-        if (r.done) {
-          loaded = true;
-          if (!T) readTop();
-          if (!T) throw new Error('mp4 senza moov');
-          pump();
-          return;
-        }
-        const c = r.value;
-        if (got + c.length > buf.length) {
-          const nb = new Uint8Array(Math.max(buf.length * 2, got + c.length));
-          nb.set(buf.subarray(0, got)); buf = nb;
-        }
-        buf.set(c, got); got += c.length;
-        if (!T) readTop(); else pump();
-        return rd.read().then(step);
-      };
-      return rd.read().then(step);
-    }).catch(fail);
-
-    /* --- lettura dell'MP4 --------------------------------------------------
-       Solo ciò che serve: la traccia video, il codec (avcC), e le cinque
-       tabelle che dicono dove sta ogni campione e quando va mostrato. */
-    const u32 = o => ((buf[o] << 24) >>> 0) + (buf[o + 1] << 16) + (buf[o + 2] << 8) + buf[o + 3];
-    const typ = o => String.fromCharCode(buf[o], buf[o + 1], buf[o + 2], buf[o + 3]);
-    function boxes(s, e) {
-      const out = [];
-      for (let o = s; o + 8 <= e;) {
-        let sz = u32(o), h = 8;
-        if (sz === 1) { sz = u32(o + 8) * 4294967296 + u32(o + 12); h = 16; }
-        if (sz === 0) sz = e - o;
-        if (sz < 8) break;
-        out.push({ t: typ(o + 4), d: o + h, e: o + sz });
-        o += sz;
-      }
-      return out;
-    }
-    const child = (b, t) => b && boxes(b.d, b.e).find(x => x.t === t);
-
-    function readTop() {
-      for (let o = 0; o + 8 <= got;) {
-        let sz = u32(o);
-        if (sz === 1) { if (o + 16 > got) return; sz = u32(o + 8) * 4294967296 + u32(o + 12); }
-        if (sz < 8) throw new Error('mp4 malformato');
-        if (typ(o + 4) === 'moov') {
-          if (o + sz > got) return;               // tabelle non ancora arrivate
-          readMoov({ d: o + 8, e: o + sz });
-          return;
-        }
-        o += sz;                                   // mdat compreso: basta l'intestazione
-      }
-    }
-
-    function readMoov(moov) {
-      let stbl = null, ts = 0, avc1 = null;
-      for (const trak of boxes(moov.d, moov.e).filter(b => b.t === 'trak')) {
-        const mdia = child(trak, 'mdia'), hdlr = child(mdia, 'hdlr');
-        if (!hdlr || typ(hdlr.d + 8) !== 'vide') continue;
-        const mdhd = child(mdia, 'mdhd');
-        ts = u32(mdhd.d + (buf[mdhd.d] === 1 ? 20 : 12));
-        stbl = child(child(mdia, 'minf'), 'stbl');
-        const stsd = child(stbl, 'stsd');
-        avc1 = stsd && boxes(stsd.d + 8, stsd.e).find(b => b.t === 'avc1' || b.t === 'avc3');
-        break;
-      }
-      if (!stbl || !avc1 || !ts) throw new Error('nessuna traccia H.264');
-      const avcC = boxes(avc1.d + 78, avc1.e).find(b => b.t === 'avcC');
-      if (!avcC) throw new Error('avcC assente');
-
-      const tab = t => child(stbl, t);
-      const stsz = tab('stsz'), stco = tab('stco') || tab('co64'), stsc = tab('stsc');
-      const stts = tab('stts'), ctts = tab('ctts'), stss = tab('stss');
-      const n = u32(stsz.d + 8), fixed = u32(stsz.d + 4);
-      const size = new Uint32Array(n), off = new Float64Array(n);
-      const pts = new Float64Array(n), key = new Uint8Array(n);
-      for (let i = 0; i < n; i++) size[i] = fixed || u32(stsz.d + 12 + 4 * i);
-
-      // stsc + stco: i campioni sono raggruppati in blocchi contigui nel file
-      const co64 = stco.t === 'co64', nch = u32(stco.d + 4), nsc = u32(stsc.d + 4);
-      for (let c = 0, s = 0, r = 0; c < nch && s < n; c++) {
-        while (r + 1 < nsc && u32(stsc.d + 8 + 12 * (r + 1)) <= c + 1) r++;
-        const per = u32(stsc.d + 12 + 12 * r);
-        let o = co64 ? u32(stco.d + 8 + 8 * c) * 4294967296 + u32(stco.d + 12 + 8 * c)
-                     : u32(stco.d + 8 + 4 * c);
-        for (let k = 0; k < per && s < n; k++) { off[s] = o; o += size[s++]; }
-      }
-      // stts + ctts: istante di presentazione di ogni campione
-      for (let i = 0, s = 0, t = 0, ne = u32(stts.d + 4); i < ne; i++) {
-        const cnt = u32(stts.d + 8 + 8 * i), d = u32(stts.d + 12 + 8 * i);
-        for (let k = 0; k < cnt && s < n; k++, t += d) pts[s++] = t;
-      }
-      if (ctts) {
-        for (let i = 0, s = 0, ne = u32(ctts.d + 4); i < ne; i++) {
-          const cnt = u32(ctts.d + 8 + 8 * i), o = u32(ctts.d + 12 + 8 * i) | 0;
-          for (let k = 0; k < cnt && s < n; k++) pts[s++] += o;
-        }
-      }
-      if (stss) for (let i = 0, ne = u32(stss.d + 4); i < ne; i++) key[u32(stss.d + 8 + 4 * i) - 1] = 1;
-      else key.fill(1);
-      key[0] = 1;
-
-      /* Ordine di presentazione ≠ ordine nel file, in generale. Il
-         fotogramma i (quello che si vede i-esimo) è il campione order[i];
-         gop[g] è il primo campione del g-esimo gruppo che parte da un
-         keyframe, e si decodifica sempre per gruppi interi: così il codice
-         resta corretto anche con un filmato che un giorno avesse B-frame. */
-      const order = Array.from({ length: n }, (_, i) => i).sort((a, b) => pts[a] - pts[b]);
-      const rank = new Uint32Array(n);
-      order.forEach((s, i) => { rank[s] = i; });
-      const gop = [], gopOf = new Uint32Array(n);
-      for (let s = 0; s < n; s++) { if (key[s]) gop.push(s); gopOf[s] = gop.length - 1; }
-
-      const desc = buf.slice(avcC.d, avcC.e);
-      const hx = v => v.toString(16).padStart(2, '0');
-      const config = {
-        codec: 'avc1.' + hx(desc[1]) + hx(desc[2]) + hx(desc[3]),
-        description: desc,
-        codedWidth:  (buf[avc1.d + 24] << 8) | buf[avc1.d + 25],
-        codedHeight: (buf[avc1.d + 26] << 8) | buf[avc1.d + 27],
-        optimizeForLatency: true
-      };
-      T = { n, size, off, key, order, rank, gop, gopOf };
-
-      VideoDecoder.isConfigSupported(config).then(r => {
-        if (dead) return;
-        if (!r || !r.supported) throw new Error('codec non supportato');
-        dec = new VideoDecoder({ output: onFrame, error: fail });
-        dec.configure(config);
-        // la coda del decoder si è svuotata: forse è il momento di spremere
-        // l'ultimo fotogramma (vedi drain) o di dargliene altri
-        dec.ondequeue = () => pump();
-        if (S.onUpdate) S.onUpdate();
-        pump();
-      }).catch(fail);
-    }
-
-    /* --- la finestra -------------------------------------------------------
-       Asimmetrica: qualche fotogramma alle spalle (per i piccoli ritorni del
-       trackpad), il grosso davanti, nella direzione in cui si sta andando. */
+    /* La finestra: asimmetrica, qualche fotogramma alle spalle (per i
+       piccoli ritorni del trackpad) e il grosso davanti, nella direzione in
+       cui si sta andando. `around` la percorre per priorità: prima quello
+       sotto gli occhi, poi allargandosi, prima in avanti e poi indietro. */
     function windowOf() {
-      const c = Math.round(want);
-      const back = Math.max(2, Math.floor(cap * 0.25)), ahead = cap - back - 1;
+      const c = Math.min(N - 1, Math.max(0, Math.round(want)));
+      const back = Math.max(2, Math.floor(cap * 0.2)), ahead = cap - back - 1;
       const lo = dir >= 0 ? c - back : c - ahead;
       const hi = dir >= 0 ? c + ahead : c + back;
-      return [Math.max(0, lo), Math.min(T.n - 1, hi), c];
+      return [Math.max(0, lo), Math.min(N - 1, hi), c];
     }
-    // Tutti i byte del campione sono arrivati?
-    const has = s => T.off[s] + T.size[s] <= got;
-    const conv = new Set();    // usciti dal decoder, in copia verso la bitmap
-
-    /* Il prossimo fotogramma da chiedere: il primo che manca partendo da
-       quello sotto gli occhi e allargandosi, prima nella direzione di marcia
-       e poi alle spalle. */
-    function nextNeeded() {
+    function around(test) {
       const [lo, hi, c] = windowOf();
       for (let d = 0; d <= hi - lo; d++) {
         for (const i of (d ? [c + d * dir, c - d * dir] : [c])) {
-          if (i >= lo && i <= hi && !cache.has(i) && !flight.has(i) && !conv.has(i) &&
-              has(T.order[i])) return i;
+          if (i >= lo && i <= hi && test(i)) return i;
         }
       }
       return -1;
     }
 
-    function feed(s) {
-      if (!flight.size) lastOut = performance.now();   // l'orologio del watchdog parte ora
-      dec.decode(new EncodedVideoChunk({
-        type: T.key[s] ? 'key' : 'delta',
-        timestamp: T.rank[s] * 1000,       // l'indice di presentazione, in µs fittizi
-        data: buf.subarray(T.off[s], T.off[s] + T.size[s])
-      }));
-      flight.add(T.rank[s]);
-      cur = s + 1 < T.n ? s + 1 : -1;
+    // Prima quelle che servono adesso, poi tutte le altre in ordine.
+    function nextFetch() {
+      const free = i => !blobs[i] && !fetching.has(i) && tries[i] < 3;
+      const i = around(free);
+      if (i >= 0) return i;
+      for (let k = 0; k < N; k++) if (free(k)) return k;
+      return -1;
     }
+    const nextDecode = () => around(i => blobs[i] && !cache.has(i) && !decoding.has(i));
 
     function pump() {
-      if (dead || !dec || !T || flushing) return;
-      try {
-        while (flight.size < FLIGHT) {
-          const i = nextNeeded();
-          if (i < 0) break;
-          const s = T.order[i];
-          /* Da dove partire: dal keyframe del gruppo del campione voluto,
-             oppure — se si sta già decodificando quel gruppo e non lo si è
-             superato — da dove ci si era fermati, senza rifare nulla. */
-          let a = T.gop[T.gopOf[s]];
-          if (cur > a && cur <= s && T.gopOf[cur] === T.gopOf[s]) a = cur;
-          for (let k = a; k <= s; k++) feed(k);
-        }
-      } catch (err) { fail(); return; }
-      /* Niente più da chiedere, ma l'ultimo fotogramma consegnato è ancora
-         dentro: esce solo insieme al successivo, o con un flush. Succede
-         solo a finestra completa, quindi su un fotogramma lontano da quello
-         che si sta guardando. */
-      if (flight.size && dec.decodeQueueSize === 0 && nextNeeded() < 0) drain();
+      if (dead) return;
+      for (let i; fetching.size < FETCH && (i = nextFetch()) >= 0;) load(i);
+      for (let i; decoding.size < DECODE && (i = nextDecode()) >= 0;) decode(i);
     }
 
-    function drain() {
-      flushing = true;
-      dec.flush().then(() => {
-        flushing = false;
-        flight.clear();      // tutto ciò che era dentro è uscito
-        cur = -1;            // e da qui il decoder vuole un keyframe
-        pump();
-      }, fail);
+    function load(i) {
+      fetching.add(i);
+      tries[i]++;
+      fetch(url(i))
+        .then(r => { if (!r.ok) throw new Error('http ' + r.status); return r.blob(); })
+        .then(b => {
+          fetching.delete(i);
+          if (dead) return;
+          blobs[i] = b; nLoaded++;
+          pump();
+        }, () => {
+          fetching.delete(i);
+          if (dead) return;
+          // tre tentativi a vuoto sullo stesso fotogramma: la sequenza non è
+          // affidabile (file mancanti, rete che cade), meglio il video intero
+          if (tries[i] >= 3) fail(); else pump();
+        });
     }
 
-    // Copia del fotogramma fuori dal decoder, alla risoluzione del canvas.
-    function onFrame(f) {
-      const i = Math.round(f.timestamp / 1000);
-      flight.delete(i);
-      lastOut = performance.now();
-      const [lo, hi] = windowOf();
-      if (dead || cache.has(i) || conv.has(i) || i < lo || i > hi) { f.close(); pump(); return; }
-      conv.add(i);
-      const w = cw, h = ch;
-      (bitmapOk
-        ? createImageBitmap(f, w === f.displayWidth ? undefined
-                               : { resizeWidth: w, resizeHeight: h, resizeQuality: 'high' })
-        : Promise.reject()
-      ).catch(() => {
-        // Browser che non sa fare una bitmap da un VideoFrame: si copia su
-        // un canvas, che per drawImage vale uguale.
-        bitmapOk = false;
-        const c = document.createElement('canvas');
-        c.width = w; c.height = h;
-        c.getContext('2d', { alpha: false }).drawImage(f, 0, 0, w, h);
-        return c;
-      }).then(img => {
-        f.close();
-        conv.delete(i);
-        if (dead || w !== cw) { free(img); return; }
-        free(cache.get(i));
-        cache.set(i, img);
+    function decode(i) {
+      decoding.add(i);
+      createImageBitmap(blobs[i]).then(bm => {
+        decoding.delete(i);
+        const [lo, hi] = windowOf();
+        if (dead || i < lo || i > hi) { bm.close(); pump(); return; }
+        cache.set(i, bm);
         trim();
+        if (!ready) { ready = true; if (S.onUpdate) S.onUpdate(); }
         const i0 = Math.floor(want);
-        if (i === i0 || i === i0 + 1) draw();
+        if (i === i0 || i === i0 + 1 || !lastDrawn) draw();
         pump();
-      }, () => { f.close(); conv.delete(i); });
-      pump();     // nel decoder si è liberato un posto
+      }, () => {
+        // immagine illeggibile: la si scarica di nuovo
+        decoding.delete(i);
+        if (blobs[i]) { blobs[i] = null; nLoaded--; }
+        pump();
+      });
     }
 
     /* Prima tutto ciò che è fuori dalla finestra, poi — solo se serve ancora
        spazio — il più lontano. L'ordine conta: la finestra è asimmetrica, e
-       tagliare per pura distanza buttava via proprio i fotogrammi appena
-       decodificati in avanti per tenere quelli alle spalle. */
+       tagliare per pura distanza butterebbe via proprio i fotogrammi appena
+       preparati in avanti per tenere quelli alle spalle. */
     function trim() {
       const [lo, hi] = windowOf();
       for (const k of [...cache.keys()]) {
-        if (k < lo || k > hi) { free(cache.get(k)); cache.delete(k); }
+        if (k < lo || k > hi) { cache.get(k).close(); cache.delete(k); }
       }
       if (cache.size <= cap) return;
       const keys = [...cache.keys()].sort((a, b) => Math.abs(b - want) - Math.abs(a - want));
       for (const k of keys) {
         if (cache.size <= cap) break;
-        free(cache.get(k)); cache.delete(k);
+        cache.get(k).close(); cache.delete(k);
       }
     }
 
@@ -778,8 +595,8 @@
        pronto si mostra il più vicino che c'è; se non c'è niente si lascia il
        canvas com'è, che è comunque l'ultima immagine giusta. */
     function draw() {
-      if (!T || dead) return;
-      const i0 = Math.min(T.n - 1, Math.floor(want)), i1 = Math.min(T.n - 1, i0 + 1);
+      if (dead) return;
+      const i0 = Math.min(N - 1, Math.floor(want)), i1 = Math.min(N - 1, i0 + 1);
       let a = BLEND ? Math.round((want - i0) * 48) / 48 : (want - i0 < 0.5 ? 0 : 1);
       let A = cache.get(i0), B = cache.get(i1), ia = i0, ib = i1;
       draws++;
@@ -801,43 +618,40 @@
       lastDrawn = k;
       try {
         ctx.globalAlpha = 1;
-        ctx.drawImage(A, 0, 0, cw, ch);
+        ctx.drawImage(A, 0, 0, W, H);
         if (a > 0) {
           ctx.globalAlpha = a;
-          ctx.drawImage(B, 0, 0, cw, ch);
+          ctx.drawImage(B, 0, 0, W, H);
         }
       } catch (err) { lastDrawn = ''; /* immagine non disegnabile: si salta */ }
       ctx.globalAlpha = 1;
     }
 
-    S.ready = () => !!dec;
+    pump();   // si parte subito: il preloader copre i primi istanti di download
+
+    S.ready = () => ready;
     S.show = q => {
-      if (!T || dead) return;
-      const w = q * (T.n - 1);
+      if (dead) return;
+      const w = q * (N - 1);
       if (Math.abs(w - want) > 0.02) dir = w > want ? 1 : -1;
       want = w;
       draw();
       pump();
-      /* Watchdog: fotogrammi consegnati che non tornano da 5 secondi
-         (decoder inceppato) e l'intro resterebbe ferma per sempre. Con la
-         pagina visibile si passa al <video>; nascosta è normale che tutto
-         sia sospeso. */
-      if (flight.size && !flushing && !document.hidden && performance.now() - lastOut > 5000) fail();
     };
-    /* A intro finita i fotogrammi in memoria non servono più: si liberano
-       (sono fino a 200 MB). Se si risale, il canvas ha ancora l'ultima
-       immagine e la finestra si ricostruisce in una frazione di secondo. */
+    /* A intro finita le bitmap in memoria non servono più: si liberano
+       (sono fino a 200 MB). Le immagini compresse restano: se si risale, il
+       canvas ha ancora l'ultima immagine e la finestra si ricostruisce in
+       una frazione di secondo, senza riscaricare nulla. */
     S.release = () => {
-      cache.forEach(free); cache.clear(); lastDrawn = '';
+      cache.forEach(b => b.close()); cache.clear(); lastDrawn = '';
     };
-    // per il pannello ?diag=1: finestra, risoluzione, fotogramma a schermo,
-    // e quante volte il fotogramma voluto non era ancora pronto
-    S.debug = () => ({ want, dir, cap, flight: flight.size, keys: [...cache.keys()].sort((a, b) => a - b) });
-    S.stats = () => T
-      ? cache.size + '/' + cap + ' @' + cw + '×' + ch + ' · ' + (lastDrawn || '-') +
-        ' · mancati ' + misses + '/' + draws + ' · in volo ' + flight.size +
-        (loaded ? '' : ' · ' + (got >> 20) + 'MB')
-      : (got >> 10) + 'KB';
+    // per il pannello ?diag=1
+    S.debug = () => ({ want, dir, cap, loaded: nLoaded, decoding: [...decoding], fetching: [...fetching],
+                       window: windowOf(), keys: [...cache.keys()].sort((a, b) => a - b) });
+    S.stats = () =>
+      cache.size + '/' + cap + ' @' + W + ' (' + DECODE + ' in parallelo)' +
+      ' · scaricati ' + nLoaded + '/' + N +
+      ' · ' + (lastDrawn || '-') + ' · mancati ' + misses + '/' + draws;
     return S;
   }
 

@@ -65,7 +65,7 @@
        default). Senza cambiarlo, l'.htaccess può anche essere corretto e un
        browser può comunque continuare a rileggersi una copia vecchia se
        l'aveva già scaricata prima che l'.htaccess entrasse in vigore. -->
-  <link rel="stylesheet" href="styles.css?v=20261006a" />
+  <link rel="stylesheet" href="styles.css?v=20261006b" />
 
   <!-- =====================================================================
        Dati strutturati (schema.org / JSON-LD)
@@ -266,10 +266,10 @@
     <video class="intro__video" id="introVideo"
            muted playsinline preload="auto"
            disablepictureinpicture disableremoteplayback></video>
-    <!-- Sul desktop il filmato non passa dal <video>: main.js lo decodifica
-         da sé (WebCodecs) e lo disegna qui, fotogramma per fotogramma, nello
-         stesso istante in cui si muove il resto della pagina. Il <video>
-         resta come riserva per i browser che non lo sanno fare. -->
+    <!-- Sul desktop il filmato non passa dal <video>: è diviso in immagini
+         (assets/frames/desktop/) e main.js disegna qui quella che corrisponde
+         allo scroll, nello stesso istante in cui si muove il resto della
+         pagina. Il <video> resta come riserva se le immagini non arrivano. -->
     <canvas class="intro__video intro__frames" id="introFrames"></canvas>
     <!-- Fascia alta del quadro. Serve solo sugli schermi che non hanno le
          proporzioni del filmato: lì la nav del video e quella vera non
@@ -877,6 +877,6 @@
      Ora lo carica main.js da solo, a intro finita. Vedi la sezione 9. -->
 <script src="vendor/gsap.min.js" defer></script>
 <script src="vendor/ScrollTrigger.min.js" defer></script>
-<script src="main.js?v=20261006a" defer></script>
+<script src="main.js?v=20261006b" defer></script>
 </body>
 </html>

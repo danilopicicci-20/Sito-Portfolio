@@ -41,7 +41,7 @@
     #   connect-src 'self'   il sito non chiama nessuna API: qualunque fetch verso
     #                        l'esterno verrebbe bloccato (utile contro l'esfiltrazione).
     #                        Serve però verso il NOSTRO dominio: l'intro desktop
-    #                        scarica il filmato con fetch() per decodificarlo da sé
+    #                        scarica i fotogrammi del filmato con fetch()
     #                        (main.js, frameSource). Con 'none' ripiegherebbe in
     #                        silenzio sul <video>, più scattoso.
     #   media-src   'self'   serve il filmato dell'intro (assets/video/). Con
@@ -112,13 +112,19 @@
 # del file senza scaricarlo tutto — è il meccanismo su cui poggia lo scrubbing
 # del <video> (telefono, e riserva sul desktop). Netlify lo serve già di suo,
 # la riga è qui per rendere esplicito che quel comportamento è un requisito.
-# Sul desktop il file viene invece scaricato intero con fetch(): la stessa
-# cache di un anno vale anche per quella richiesta.
 [[headers]]
   for = "/assets/video/*"
   [headers.values]
     Cache-Control = "public, max-age=31536000, immutable"
     Accept-Ranges = "bytes"
+
+# I fotogrammi dell'intro desktop: stessa logica del filmato di cui sono la
+# copia. Se vengono rigenerati con gli stessi nomi, si cambia FRAMES_V in
+# main.js: l'URL cambia e la cache vecchia non viene più chiesta.
+[[headers]]
+  for = "/assets/frames/*"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"
 
 # Le librerie sono a versione fissa ma il nome non la contiene: cache lunga
 # ma non "immutable", così un eventuale aggiornamento si propaga.

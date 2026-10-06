@@ -244,8 +244,8 @@ html.has-intro .intro.is-done{ display:none; }
   transform:translateZ(0);
 }
 
-/* Il canvas del motore a fotogrammi (main.js, frameSource). Prende il posto
-   del <video> quando il browser sa decodificare da sé (WebCodecs): stesse
+/* Il canvas del filmato diviso in fotogrammi (main.js, frameSource). Prende
+   il posto del <video> sul desktop: stesse
    regole di impaginazione — object-fit:cover vale anche per un canvas — quindi
    tutte le misure del raccordo restano identiche. Spento finché JS non accende
    .is-frames; se il motore fallisce la classe sparisce e torna il <video>. */
