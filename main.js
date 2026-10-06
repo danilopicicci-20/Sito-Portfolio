@@ -11,6 +11,7 @@
      5. Animazioni legate allo scroll
      6. Marquee
      7. Cursore custom
+     7b. Scroll morbido
      8. Micro-interazioni (logo liquido, bagliore sulle card)
      9. Boot
 
@@ -40,6 +41,13 @@
   const hasGSAP = typeof gsap !== 'undefined';
   const hasST   = hasGSAP && typeof ScrollTrigger !== 'undefined';
   const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  /* Scroll morbido (sezione 7b): solo con mouse o trackpad. Sul touch lo
+     scroll del sistema è già inerziale e va lasciato com'è. ?scroll=nativo
+     lo spegne, per confrontare. Va deciso qui perché cambia come tutte le
+     animazioni legate allo scroll seguono la pagina (vedi `scrub`). */
+  const smoothOn = hasGSAP && !reduced && matchMedia('(pointer: fine)').matches &&
+                   !/[?&]scroll=nativo(&|$)/.test(location.search);
 
   // Three.js non è nell'HTML: arriva dopo, se e quando serve (sezione 9).
   const hasTHREE = () => typeof THREE !== 'undefined';
@@ -487,7 +495,7 @@
     function fail() {
       if (dead) return;
       dead = true;
-      cache.forEach(b => b.close()); cache.clear();
+      cache.forEach(release); cache.clear();
       introEl.classList.remove('is-frames');
       // Il motore 1 prende il posto di questo, con gli stessi agganci.
       const v = videoSource();
@@ -533,11 +541,25 @@
       for (let i; decoding.size < DECODE && (i = nextDecode()) >= 0;) decode(i);
     }
 
+    /* Online si scarica con fetch e si tiene il file compresso: decodificarlo
+       da lì costa 11 ms a fotogramma, contro i 33-41 passando da un'<img>
+       (misurati). Ma aperto come file dal disco (file://) il browser vieta
+       fetch, e allora — invece di ripiegare in silenzio sul video — si usa
+       un'<img>, che dal disco carica sempre. */
+    const fromDisk = location.protocol === 'file:';
+    const get = i => fromDisk
+      ? new Promise((ok, ko) => {
+          const im = new Image();
+          im.decoding = 'async';
+          im.onload = () => ok(im); im.onerror = ko;
+          im.src = url(i);
+        })
+      : fetch(url(i)).then(r => { if (!r.ok) throw new Error('http ' + r.status); return r.blob(); });
+
     function load(i) {
       fetching.add(i);
       tries[i]++;
-      fetch(url(i))
-        .then(r => { if (!r.ok) throw new Error('http ' + r.status); return r.blob(); })
+      get(i)
         .then(b => {
           fetching.delete(i);
           if (dead) return;
@@ -552,12 +574,19 @@
         });
     }
 
+    // Da un file compresso, o — da disco — da un'<img>: se il browser non sa
+    // farne una bitmap, si tiene l'<img> già decodificata, che si disegna uguale.
+    const toBitmap = src => src instanceof Blob
+      ? createImageBitmap(src)
+      : src.decode().then(() => createImageBitmap(src)).catch(() => src);
+    const release = b => { if (b && b.close) b.close(); };
+
     function decode(i) {
       decoding.add(i);
-      createImageBitmap(blobs[i]).then(bm => {
+      toBitmap(blobs[i]).then(bm => {
         decoding.delete(i);
         const [lo, hi] = windowOf();
-        if (dead || i < lo || i > hi) { bm.close(); pump(); return; }
+        if (dead || i < lo || i > hi) { release(bm); pump(); return; }
         cache.set(i, bm);
         trim();
         if (!ready) { ready = true; if (S.onUpdate) S.onUpdate(); }
@@ -579,13 +608,13 @@
     function trim() {
       const [lo, hi] = windowOf();
       for (const k of [...cache.keys()]) {
-        if (k < lo || k > hi) { cache.get(k).close(); cache.delete(k); }
+        if (k < lo || k > hi) { release(cache.get(k)); cache.delete(k); }
       }
       if (cache.size <= cap) return;
       const keys = [...cache.keys()].sort((a, b) => Math.abs(b - want) - Math.abs(a - want));
       for (const k of keys) {
         if (cache.size <= cap) break;
-        cache.get(k).close(); cache.delete(k);
+        release(cache.get(k)); cache.delete(k);
       }
     }
 
@@ -643,7 +672,7 @@
        canvas ha ancora l'ultima immagine e la finestra si ricostruisce in
        una frazione di secondo, senza riscaricare nulla. */
     S.release = () => {
-      cache.forEach(b => b.close()); cache.clear(); lastDrawn = '';
+      cache.forEach(release); cache.clear(); lastDrawn = '';
     };
     // per il pannello ?diag=1
     S.debug = () => ({ want, dir, cap, loaded: nLoaded, decoding: [...decoding], fetching: [...fetching],
@@ -785,7 +814,11 @@
     }
 
     renderer.setSize(innerWidth, innerHeight);
-    renderer.setPixelRatio(Math.min(devicePixelRatio, 2));   // oltre 2× non si vede la differenza, si paga solo
+    /* 1,5× e non 2×: lo sfondo sono punti sfumati sotto lo scrim, e su un
+       retina il passaggio da 1,5 a 2 non si vede — ma sono quasi il doppio
+       dei pixel da riempire a ogni fotogramma, con l'antialiasing sopra, su
+       una tela grande quanto lo schermo. Tempo di GPU tolto allo scroll. */
+    renderer.setPixelRatio(Math.min(devicePixelRatio, 1.5));
 
     scene = new THREE.Scene();
     scene.fog = new THREE.FogExp2(0x07070a, 0.055);
@@ -804,17 +837,26 @@
       wavePlane(COUNT, 8.5)
     ];
 
+    /* Il morphing si fa nella GPU. Prima ogni fotogramma ricalcolava in
+       JavaScript tutte le 19.500 coordinate e le ricaricava sulla scheda
+       grafica — anche a sfera ferma, cioè quasi sempre. Ora la geometria
+       porta le due forme fra cui si sta passando (position = A, aB = B) e lo
+       shader le mescola con un solo numero, uMix: il thread principale non
+       tocca più i vertici, e i dati viaggiano verso la GPU solo quando si
+       passa da una coppia di forme alla successiva — quattro volte in tutta
+       la pagina. */
     geo = new THREE.BufferGeometry();
-    const pos  = new Float32Array(shapes[0]);
     const rand = new Float32Array(COUNT);
     for (let i = 0; i < COUNT; i++) rand[i] = Math.random();
-    geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+    geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(shapes[0]), 3));
+    geo.setAttribute('aB', new THREE.BufferAttribute(new Float32Array(shapes[1]), 3));
     geo.setAttribute('aRand', new THREE.BufferAttribute(rand, 1));
 
     uniforms = {
       uTime: { value: 0 },
+      uMix:  { value: 0 },
       uSize: { value: 62.0 },
-      uPix:  { value: Math.min(devicePixelRatio, 2) },
+      uPix:  { value: Math.min(devicePixelRatio, 1.5) },
       uC1:   { value: new THREE.Color(0x7c5cff) },
       uC2:   { value: new THREE.Color(0x00e2b8) },
       uC3:   { value: new THREE.Color(0xff5c8a) }
@@ -827,10 +869,11 @@
       blending: THREE.AdditiveBlending,
       vertexShader: `
         attribute float aRand;
-        uniform float uTime, uSize, uPix;
+        attribute vec3 aB;
+        uniform float uTime, uSize, uPix, uMix;
         varying float vR;
         void main(){
-          vec3 p = position;
+          vec3 p = mix(position, aB, uMix);
           // ogni punto oscilla con una fase propria: il gruppo "respira"
           float w = uTime * 0.55 + aRand * 6.2831;
           p.x += sin(w) * 0.055;
@@ -856,7 +899,11 @@
         }`
     });
 
-    group.add(new THREE.Points(geo, mat));
+    const points = new THREE.Points(geo, mat);
+    // la forma vera la decide lo shader: il volume calcolato su `position`
+    // da solo non è affidabile per scartarla fuori campo
+    points.frustumCulled = false;
+    group.add(points);
 
     // anello wireframe di supporto: dà un riferimento di profondità alla nuvola
     ring = new THREE.Mesh(
@@ -877,22 +924,28 @@
     camera.aspect = innerWidth / innerHeight;
     camera.updateProjectionMatrix();
     renderer.setSize(innerWidth, innerHeight);
-    uniforms.uPix.value = Math.min(devicePixelRatio, 2);
+    uniforms.uPix.value = Math.min(devicePixelRatio, 1.5);
     measureDoc();
   }
 
-  /* Interpola fra le forme. `t` 0..1 copre l'intera sequenza. */
+  /* Interpola fra le forme. `t` 0..1 copre l'intera sequenza. La miscela la
+     fa lo shader (vedi initGL): qui si cambia solo la coppia di forme quando
+     si entra in un altro tratto, e il numero che le mescola. */
+  let morphSeg = 0;
   function morph(t) {
     const segments = shapes.length - 1;
     const f = Math.max(0, Math.min(0.9999, t)) * segments;
     const i = Math.floor(f);
     let k = f - i;
     k = k * k * (3 - 2 * k);                 // smoothstep: entra ed esce morbido
-    const A = shapes[i];
-    const B = shapes[i + 1] || shapes[i];
-    const arr = geo.attributes.position.array;
-    for (let j = 0; j < arr.length; j++) arr[j] = A[j] + (B[j] - A[j]) * k;
-    geo.attributes.position.needsUpdate = true;
+    if (i !== morphSeg) {
+      morphSeg = i;
+      const a = geo.attributes.position, b = geo.attributes.aB;
+      a.array.set(shapes[i]);
+      b.array.set(shapes[i + 1] || shapes[i]);
+      a.needsUpdate = b.needsUpdate = true;
+    }
+    uniforms.uMix.value = k;
   }
 
   /* Interruttore della scena 3D. Durante la prima parte dell'intro il sito è
@@ -1450,8 +1503,14 @@
 
          Il telefono invece resta a 2,6: lì la corsa è già poco più di due
          swipe, ed è l'unica parte del raccordo che non ha mai avuto bisogno
-         di essere rivista. Ad accorciarsi è il desktop. */
-      introPx = Math.round(h * (w < 900 ? 2.6 : 4.0));
+         di essere rivista. Ad accorciarsi è il desktop.
+
+         Ora il desktop scende a 3: con i fotogrammi come immagini non c'è
+         più nessun decoder da risparmiare (mostrarne uno qualsiasi costa
+         uguale), e quattro schermate erano una quarantina di scatti di
+         rotella per arrivare al sito — la prima cosa che si percepiva come
+         "lento". */
+      introPx = Math.round(h * (w < 900 ? 2.6 : 3.0));
 
       /* --- la corsa bloccata è PIÙ LUNGA dell'animazione, ed è il punto ---
 
@@ -2024,8 +2083,11 @@
            decide se l'intro sembra reattiva, non la lunghezza della corsa.
            0,55 è il compromesso: abbastanza da non lasciare spigoli (sotto
            il mezzo secondo i gradini della rotella ricominciano a vedersi),
-           abbastanza poco da sentire che il filmato risponde. */
-        scrub: 0.55,
+           abbastanza poco da sentire che il filmato risponde.
+           Con lo scroll morbido (sezione 7b) i gradini non esistono più alla
+           fonte: il filmato segue la pagina senza ritardo proprio, e un solo
+           smorzamento governa tutto invece di due in cascata. */
+        scrub: smoothOn ? true : 0.55,
         invalidateOnRefresh: true
       }
     });
@@ -2238,7 +2300,9 @@
       const info   = w.querySelectorAll('.work__info > *');
       // il verso segue il layout: normale = arriva da sinistra, --reverse = da destra
       const dir = w.classList.contains('work--reverse') ? 1 : -1;
-      const trigger = { trigger: w, start: 'top 92%', end: 'top 38%', scrub: 0.7 };
+      // con lo scroll morbido il ritardo proprio non serve più (vedi 7b):
+      // sommato all'inerzia della pagina faceva arrivare i riquadri in ritardo
+      const trigger = { trigger: w, start: 'top 92%', end: 'top 38%', scrub: smoothOn ? true : 0.7 };
 
       gsap.fromTo(visual,
         { xPercent: dir * 140, rotate: dir * -5, scale: 0.92, opacity: 0 },
@@ -2261,7 +2325,7 @@
     const bar = document.getElementById('procBar');
     if (bar) {
       gsap.to(bar, {
-        scrollTrigger: { trigger: '.proc__steps', start: 'top 65%', end: 'bottom 75%', scrub: 0.6 },
+        scrollTrigger: { trigger: '.proc__steps', start: 'top 65%', end: 'bottom 75%', scrub: smoothOn ? true : 0.6 },
         width: '100%', ease: 'none'
       });
     }
@@ -2342,7 +2406,17 @@
 
     addEventListener('mousemove', e => { tx = e.clientX; ty = e.clientY; }, { passive: true });
 
+    let still = false;
     (function loop() {
+      requestAnimationFrame(loop);
+      // Fermo dov'è il puntatore: niente da riscrivere. Prima lo stile veniva
+      // riassegnato a ogni fotogramma anche a mouse immobile — un ricalcolo
+      // in più, sessanta volte al secondo, per tutta la visita.
+      if (Math.abs(tx - x) < 0.1 && Math.abs(ty - y) < 0.1) {
+        if (still) return;
+        still = true;
+      } else still = false;
+
       const px = x, py = y;
       x += (tx - x) * 0.22;                    // inseguimento smorzato
       y += (ty - y) * 0.22;
@@ -2356,8 +2430,6 @@
 
       c.style.transform =
         `translate(${x}px, ${y}px) translate(-50%,-50%) rotate(${angle}deg) scale(${stretch}, ${squeeze})`;
-
-      requestAnimationFrame(loop);
     })();
 
     document.querySelectorAll('[data-hover]').forEach(el => {
@@ -2371,6 +2443,68 @@
         }
       });
       el.addEventListener('mouseleave', () => c.classList.remove('is-hover', 'is-label'));
+    });
+  }
+
+  /* ===========================================================================
+     7b. SCROLL MORBIDO
+     ===========================================================================
+     La rotella del mouse non scorre: salta. Cento pixel a scatto, in un
+     fotogramma solo, e tutto ciò che è legato allo scroll salta con lei —
+     l'intro soprattutto, che a ogni scatto avanzava di sei fotogrammi in un
+     colpo. Lo `scrub` di GSAP provava a nasconderlo inseguendo lo scroll con
+     mezzo secondo di ritardo, ma a ogni scatto ripartiva veloce e rallentava:
+     un movimento a impulsi, e sempre in ritardo sul dito. Scattoso e lento
+     insieme, che è esattamente com'era.
+
+     Qui la morbidezza si sposta alla fonte, ed è la tecnica dei siti che
+     sembrano "di lusso" (Lenis ne è l'implementazione più nota): la rotella
+     sposta un BERSAGLIO, e la pagina vera lo raggiunge scorrendo con
+     un'inerzia esponenziale, un passo per fotogramma. Lo scroll del browser
+     resta quello vero — barra laterale, tastiera, link alle sezioni,
+     ScrollTrigger funzionano come prima — cambia solo il modo in cui ci si
+     arriva. A quel punto tutte le animazioni legate allo scroll possono
+     seguirlo senza ritardo proprio (scrub: true), e si muovono tutte con la
+     stessa curva, nello stesso fotogramma.
+
+     Il passo è calcolato sul tempo trascorso, non sul numero di fotogrammi:
+     su un monitor a 120 Hz o su uno che perde un fotogramma la sensazione
+     resta identica. */
+  function smoothScroll() {
+    if (!smoothOn) return;
+
+    /* Quanto in fretta la pagina raggiunge il bersaglio: con 7 si è a metà
+       strada in un decimo di secondo e praticamente arrivati in mezzo
+       secondo. Più basso è più "pesante" e lussuoso ma meno reattivo; più
+       alto torna verso lo scatto. */
+    const LAMBDA = 7;
+    const root = document.documentElement;
+    let target = scrollY, cur = scrollY, moving = false;
+
+    addEventListener('wheel', e => {
+      // zoom con ctrl+rotella e preloader in corso: il browser fa da sé
+      if (e.ctrlKey || document.body.classList.contains('is-loading')) return;
+      let dy = e.deltaY;
+      if (e.deltaMode === 1) dy *= 32;                 // a righe (Firefox)
+      else if (e.deltaMode === 2) dy *= innerHeight;   // a pagine
+      if (Math.abs(e.deltaX) > Math.abs(dy)) return;   // gesto orizzontale
+      e.preventDefault();
+      if (!moving) target = cur = scrollY;             // si riparte da dov'è davvero
+      target = Math.max(0, Math.min(root.scrollHeight - innerHeight, target + dy));
+      moving = true;
+    }, { passive: false });
+
+    // Tastiera, barra laterale, link alle sezioni: lo scroll cambia senza di
+    // noi, e il bersaglio lo segue, così la rotella successiva parte da lì.
+    addEventListener('scroll', () => { if (!moving) target = cur = scrollY; }, { passive: true });
+
+    gsap.ticker.add((time, dt) => {
+      if (!moving) return;
+      cur += (target - cur) * (1 - Math.exp(-LAMBDA * Math.min(dt, 64) / 1000));
+      if (Math.abs(target - cur) < 0.25) { cur = target; moving = false; }
+      scrollTo({ top: cur, behavior: 'instant' });
+      // nello stesso fotogramma, non al prossimo evento di scroll
+      if (hasST) ScrollTrigger.update();
     });
   }
 
@@ -2538,6 +2672,7 @@
     if (!hasGSAP) revealStatic();
 
     cursor();
+    smoothScroll();
     cardGlow();
     marquee();
     liquidLogo();
