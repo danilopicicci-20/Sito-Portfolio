@@ -285,13 +285,32 @@
                   && !(navigator.deviceMemory && navigator.deviceMemory < 4)
                   && !!introVideo.canPlayType('video/mp4; codecs="avc1.4d401f"');
 
+  /* La sorgente dei fotogrammi: chi dà le immagini all'intro. Due motori con
+     la stessa interfaccia (show / ready / kind), vedi frameSource e
+     videoSource qui sotto.
+
+     Il desktop usa i fotogrammi decodificati da noi. Il <video> resta per il
+     telefono — dove il filmato è a 720p, lo scrubbing è sempre stato fluido e
+     la memoria è poca — e come riserva automatica ovunque il primo motore non
+     possa partire o si inceppi. */
+  const canDecode = typeof VideoDecoder === 'function' &&
+                    typeof EncodedVideoChunk === 'function' &&
+                    typeof ReadableStream === 'function' &&
+                    // solo con mouse o trackpad, cioè su un computer: un
+                    // tablet usa anche lui il filmato del laptop, ma ha meno
+                    // memoria per la finestra di fotogrammi, e lì il <video>
+                    // ha sempre funzionato
+                    matchMedia('(pointer: fine)').matches &&
+                    // ?motore=video forza il motore di riserva: serve a
+                    // confrontare i due sullo stesso computer
+                    !/[?&]motore=video(&|$)/.test(location.search);
+  let film = null;
+
   if (introOn) {
     document.documentElement.classList.add('has-intro');
     // Il file scelto qui, e non con più <source>: così il telefono scarica
     // solo il filmato del telefono e il desktop solo quello del laptop.
-    introVideo.src = ref.src;
-    introVideo.load();
-    primeVideo(introVideo);
+    film = (ref.layout === 'laptop' && canDecode) ? frameSource(ref.src) : videoSource();
   }
 
   /* Sblocco del buffer — è questo il punto in cui iOS si comporta come nessun
@@ -321,11 +340,515 @@
     addEventListener('pointerdown', kick, { once: true, passive: true });
   }
 
+  /* --- Motore 1: il <video> che cerca il fotogramma -------------------------
+     Il metodo di sempre: currentTime = istante voluto, e il browser fa il
+     resto. Funziona ovunque, ma ogni ricerca attraversa tutta la pipeline
+     multimediale del browser ed è asincrona: il fotogramma arriva quando
+     arriva, non nel fotogramma della pagina in cui lo si è chiesto. A 720p sul
+     telefono non si nota; a 2560×1440 sul desktop sì, ed è la ragione del
+     motore 2. */
+  function videoSource() {
+    const v = introVideo;
+    const S = { kind: 'video', onUpdate: null };
+    let dur = 8, lastFrame = -1, wantFrame = -1;
+
+    v.src = ref.src;
+    v.load();
+    primeVideo(v);
+
+    const ping = () => { if (S.onUpdate) S.onUpdate(); };
+    v.addEventListener('loadedmetadata', () => { dur = v.duration || dur; ping(); });
+    // Primo fotogramma disponibile: si ridisegna, altrimenti finché non si
+    // scorre il video resterebbe vuoto.
+    v.addEventListener('loadeddata', ping, { once: true });
+
+    /* Separare "voluto" da "chiesto" serve a una cosa sola: un decoder che sta
+       già cercando non accetta una nuova richiesta, quindi appena ha finito,
+       se nel frattempo lo scroll è andato oltre, la richiesta successiva parte
+       da dentro l'evento `seeked` invece di aspettare il giro dopo. Si cerca
+       il CENTRO del fotogramma (+0,5): puntare al confine esatto lascia
+       decidere all'arrotondamento quale dei due mostrare, ed è lo sfarfallio. */
+    function seekTo(idx) {
+      lastFrame = idx;
+      try {
+        v.currentTime = Math.min(dur - 1e-3, (idx + 0.5) / REF_FPS);
+      } catch (err) { lastFrame = -1; /* rifiutata: si riprova al frame dopo */ }
+    }
+    v.addEventListener('seeked', () => {
+      if (wantFrame >= 0 && wantFrame !== lastFrame) seekTo(wantFrame);
+    });
+
+    /* Basta avere i metadati (readyState 1): assegnare currentTime scatena
+       comunque il recupero del pezzo di file che serve. Pretendere
+       readyState 2 significava, su iOS, non cercare mai. */
+    S.ready = () => v.readyState >= 1;
+    S.show = q => {
+      if (v.readyState < 1) return;
+      const n = Math.max(1, Math.round(dur * REF_FPS));
+      wantFrame = Math.round(q * (n - 1));
+      if (wantFrame !== lastFrame && !v.seeking) seekTo(wantFrame);
+    };
+    S.release = () => {};
+    S.stats = () => 'readyState ' + v.readyState;
+    return S;
+  }
+
+  /* --- Motore 2: i fotogrammi decodificati da noi (WebCodecs) ---------------
+
+     Misurato, non supposto. Su questo file (2560×1440, un keyframe ogni due
+     fotogrammi) una ricerca del <video> costa 15-60 ms e consegna il
+     fotogramma in modo asincrono rispetto al resto della pagina. Il decoder
+     hardware dello stesso computer, chiamato direttamente, ne decodifica uno
+     ogni 2,2 ms quando glieli si passa in fila — l'intero filmato in meno di
+     mezzo secondo — e restituisce ciascuno con UN SOLO fotogramma di
+     ritardo. Quello che costa è fermarsi e svuotarlo (flush): 25-60 ms ogni
+     volta, ed è esattamente ciò che fa il <video> a ogni ricerca.
+
+     Da qui il metodo:
+       · il file si scarica una volta sola, in streaming, e le sue tabelle
+         (dove sta ogni fotogramma, quanto pesa, quali sono keyframe) si
+         leggono qui — è un MP4 normale, lo stesso di prima;
+       · il decoder viene alimentato di continuo, in anticipo, nella
+         direzione in cui si sta scorrendo, senza mai fermarlo: tutti i
+         keyframe di questo file sono IDR, quindi si può saltare da un punto
+         all'altro senza svuotarlo. Il flush resta solo per spremere l'ultimo
+         fotogramma quando la finestra è completa, cioè lontano da quello
+         sotto gli occhi;
+       · ogni fotogramma decodificato viene copiato subito in una bitmap già
+         alla risoluzione dello schermo, e il decoder viene liberato (ne
+         trattiene al massimo una ventina, poi si blocca);
+       · si tiene in memoria una FINESTRA di fotogrammi attorno alla
+         posizione, dimensionata in megabyte e non in numero;
+       · il disegno avviene nel canvas, in modo sincrono, dentro lo stesso
+         giro in cui GSAP muove tutto il resto: nessun ritardo fra lo scroll
+         e l'immagine, nessuna attesa del decoder;
+       · fra due fotogrammi si disegna la loro dissolvenza, pesata sulla
+         posizione esatta: la corsa diventa continua invece che a gradini di
+         un trentesimo di secondo.
+
+     Qualunque intoppo — browser senza WebCodecs, codec non supportato,
+     errore del decoder, rete — e si passa al motore 1 senza che chi guarda
+     se ne accorga. */
+  function frameSource(url) {
+    const S = { kind: 'frames', onUpdate: null };
+    const canvas = document.getElementById('introFrames');
+    const ctx = canvas && canvas.getContext('2d', { alpha: false });
+    if (!ctx) return videoSource();
+
+    /* Quanta memoria può occupare la finestra di fotogrammi decodificati.
+       Un fotogramma a 2560×1440 pesa 14,7 MB, a 1280×720 un quarto: dare un
+       budget in megabyte invece che in numero lascia ai monitor piccoli una
+       finestra lunga, e a un retina — che vuole la risoluzione piena — una
+       finestra più corta ma ancora ampia rispetto a quanto si decodifica in
+       anticipo. */
+    const BUDGET = 200 * 1024 * 1024;
+    /* Fotogrammi consegnati al decoder e non ancora tornati. Pochi di
+       proposito: abbastanza da tenerlo sempre occupato, abbastanza pochi da
+       cambiare direzione all'istante quando lo scroll si inverte — e lontani
+       dal limite oltre il quale il decoder hardware si blocca. */
+    const FLIGHT = 6;
+    const BLEND  = true;       // dissolvenza fra fotogrammi adiacenti
+
+    let buf = new Uint8Array(0), got = 0, loaded = false;
+    let T = null;              // tabelle dei campioni, vedi readMoov
+    let dec = null, dead = false;
+    let cur = -1;              // prossimo campione che continua la sequenza (-1: serve un keyframe)
+    let flushing = false;
+    const flight = new Set();  // fotogrammi in volo dentro il decoder
+    let cw = 0, ch = 0, cap = 8;
+    const cache = new Map();   // indice di fotogramma → bitmap (o canvas)
+    let want = 0, dir = 1, lastDrawn = '', misses = 0, draws = 0, lastOut = 0;
+    let bitmapOk = typeof createImageBitmap === 'function';
+
+    introEl.classList.add('is-frames');
+
+    /* Il canvas ha le proporzioni del filmato e la risoluzione che serve
+       davvero sullo schermo: object-fit:cover lo stende come stendeva il
+       video, quindi ogni misura del raccordo resta valida. Mai più grande
+       del filmato (ingrandire qui non aggiunge nulla), mai più piccolo dei
+       pixel fisici che andrà a coprire. */
+    function size() {
+      // In una scheda aperta in background il viewport può valere 0 mentre
+      // la pagina si carica: in quel caso risoluzione piena, e il primo
+      // resize vero rimette le cose a posto.
+      const s0 = Math.max(innerWidth / ref.fw, innerHeight / ref.fh) || 1;
+      const f = Math.min(1, s0 * (devicePixelRatio || 1));
+      const w = Math.round(ref.fw * f), h = Math.round(ref.fh * f);
+      if (w === cw && h === ch) return;
+      // Cambio di risoluzione vero (non i pochi pixel della barra degli
+      // indirizzi): le bitmap vecchie sono della misura sbagliata.
+      const big = !cw || Math.abs(w - cw) / cw > 0.1;
+      cw = w; ch = h;
+      canvas.width = cw; canvas.height = ch;
+      cap = Math.max(8, Math.min(48, Math.floor(BUDGET / (cw * ch * 4))));
+      if (big) { cache.forEach(free); cache.clear(); }
+      lastDrawn = '';
+      draw();     // ridimensionare il canvas lo svuota: si ridisegna subito
+      pump();
+    }
+    const free = b => { if (b && b.close) b.close(); };
+    size();
+    addEventListener('resize', size);
+
+    function fail() {
+      if (dead) return;
+      dead = true;
+      try { if (dec && dec.state !== 'closed') dec.close(); } catch (err) { /* già chiuso */ }
+      cache.forEach(free); cache.clear();
+      removeEventListener('resize', size);
+      introEl.classList.remove('is-frames');
+      // Il motore 1 prende il posto di questo, con gli stessi agganci.
+      const v = videoSource();
+      v.onUpdate = S.onUpdate;
+      film = v;
+      if (v.onUpdate) v.onUpdate();
+    }
+
+    /* --- download in streaming -------------------------------------------
+       Il moov (le tabelle) sta in testa al file, quindi si legge dopo i primi
+       due kilobyte; da lì ogni fotogramma è decodificabile appena i suoi byte
+       sono arrivati, senza aspettare la fine del download. */
+    fetch(url).then(res => {
+      if (!res.ok || !res.body) throw new Error('http ' + res.status);
+      buf = new Uint8Array(+res.headers.get('Content-Length') || (4 << 20));
+      const rd = res.body.getReader();
+      const step = r => {
+        if (dead) return;
+        if (r.done) {
+          loaded = true;
+          if (!T) readTop();
+          if (!T) throw new Error('mp4 senza moov');
+          pump();
+          return;
+        }
+        const c = r.value;
+        if (got + c.length > buf.length) {
+          const nb = new Uint8Array(Math.max(buf.length * 2, got + c.length));
+          nb.set(buf.subarray(0, got)); buf = nb;
+        }
+        buf.set(c, got); got += c.length;
+        if (!T) readTop(); else pump();
+        return rd.read().then(step);
+      };
+      return rd.read().then(step);
+    }).catch(fail);
+
+    /* --- lettura dell'MP4 --------------------------------------------------
+       Solo ciò che serve: la traccia video, il codec (avcC), e le cinque
+       tabelle che dicono dove sta ogni campione e quando va mostrato. */
+    const u32 = o => ((buf[o] << 24) >>> 0) + (buf[o + 1] << 16) + (buf[o + 2] << 8) + buf[o + 3];
+    const typ = o => String.fromCharCode(buf[o], buf[o + 1], buf[o + 2], buf[o + 3]);
+    function boxes(s, e) {
+      const out = [];
+      for (let o = s; o + 8 <= e;) {
+        let sz = u32(o), h = 8;
+        if (sz === 1) { sz = u32(o + 8) * 4294967296 + u32(o + 12); h = 16; }
+        if (sz === 0) sz = e - o;
+        if (sz < 8) break;
+        out.push({ t: typ(o + 4), d: o + h, e: o + sz });
+        o += sz;
+      }
+      return out;
+    }
+    const child = (b, t) => b && boxes(b.d, b.e).find(x => x.t === t);
+
+    function readTop() {
+      for (let o = 0; o + 8 <= got;) {
+        let sz = u32(o);
+        if (sz === 1) { if (o + 16 > got) return; sz = u32(o + 8) * 4294967296 + u32(o + 12); }
+        if (sz < 8) throw new Error('mp4 malformato');
+        if (typ(o + 4) === 'moov') {
+          if (o + sz > got) return;               // tabelle non ancora arrivate
+          readMoov({ d: o + 8, e: o + sz });
+          return;
+        }
+        o += sz;                                   // mdat compreso: basta l'intestazione
+      }
+    }
+
+    function readMoov(moov) {
+      let stbl = null, ts = 0, avc1 = null;
+      for (const trak of boxes(moov.d, moov.e).filter(b => b.t === 'trak')) {
+        const mdia = child(trak, 'mdia'), hdlr = child(mdia, 'hdlr');
+        if (!hdlr || typ(hdlr.d + 8) !== 'vide') continue;
+        const mdhd = child(mdia, 'mdhd');
+        ts = u32(mdhd.d + (buf[mdhd.d] === 1 ? 20 : 12));
+        stbl = child(child(mdia, 'minf'), 'stbl');
+        const stsd = child(stbl, 'stsd');
+        avc1 = stsd && boxes(stsd.d + 8, stsd.e).find(b => b.t === 'avc1' || b.t === 'avc3');
+        break;
+      }
+      if (!stbl || !avc1 || !ts) throw new Error('nessuna traccia H.264');
+      const avcC = boxes(avc1.d + 78, avc1.e).find(b => b.t === 'avcC');
+      if (!avcC) throw new Error('avcC assente');
+
+      const tab = t => child(stbl, t);
+      const stsz = tab('stsz'), stco = tab('stco') || tab('co64'), stsc = tab('stsc');
+      const stts = tab('stts'), ctts = tab('ctts'), stss = tab('stss');
+      const n = u32(stsz.d + 8), fixed = u32(stsz.d + 4);
+      const size = new Uint32Array(n), off = new Float64Array(n);
+      const pts = new Float64Array(n), key = new Uint8Array(n);
+      for (let i = 0; i < n; i++) size[i] = fixed || u32(stsz.d + 12 + 4 * i);
+
+      // stsc + stco: i campioni sono raggruppati in blocchi contigui nel file
+      const co64 = stco.t === 'co64', nch = u32(stco.d + 4), nsc = u32(stsc.d + 4);
+      for (let c = 0, s = 0, r = 0; c < nch && s < n; c++) {
+        while (r + 1 < nsc && u32(stsc.d + 8 + 12 * (r + 1)) <= c + 1) r++;
+        const per = u32(stsc.d + 12 + 12 * r);
+        let o = co64 ? u32(stco.d + 8 + 8 * c) * 4294967296 + u32(stco.d + 12 + 8 * c)
+                     : u32(stco.d + 8 + 4 * c);
+        for (let k = 0; k < per && s < n; k++) { off[s] = o; o += size[s++]; }
+      }
+      // stts + ctts: istante di presentazione di ogni campione
+      for (let i = 0, s = 0, t = 0, ne = u32(stts.d + 4); i < ne; i++) {
+        const cnt = u32(stts.d + 8 + 8 * i), d = u32(stts.d + 12 + 8 * i);
+        for (let k = 0; k < cnt && s < n; k++, t += d) pts[s++] = t;
+      }
+      if (ctts) {
+        for (let i = 0, s = 0, ne = u32(ctts.d + 4); i < ne; i++) {
+          const cnt = u32(ctts.d + 8 + 8 * i), o = u32(ctts.d + 12 + 8 * i) | 0;
+          for (let k = 0; k < cnt && s < n; k++) pts[s++] += o;
+        }
+      }
+      if (stss) for (let i = 0, ne = u32(stss.d + 4); i < ne; i++) key[u32(stss.d + 8 + 4 * i) - 1] = 1;
+      else key.fill(1);
+      key[0] = 1;
+
+      /* Ordine di presentazione ≠ ordine nel file, in generale. Il
+         fotogramma i (quello che si vede i-esimo) è il campione order[i];
+         gop[g] è il primo campione del g-esimo gruppo che parte da un
+         keyframe, e si decodifica sempre per gruppi interi: così il codice
+         resta corretto anche con un filmato che un giorno avesse B-frame. */
+      const order = Array.from({ length: n }, (_, i) => i).sort((a, b) => pts[a] - pts[b]);
+      const rank = new Uint32Array(n);
+      order.forEach((s, i) => { rank[s] = i; });
+      const gop = [], gopOf = new Uint32Array(n);
+      for (let s = 0; s < n; s++) { if (key[s]) gop.push(s); gopOf[s] = gop.length - 1; }
+
+      const desc = buf.slice(avcC.d, avcC.e);
+      const hx = v => v.toString(16).padStart(2, '0');
+      const config = {
+        codec: 'avc1.' + hx(desc[1]) + hx(desc[2]) + hx(desc[3]),
+        description: desc,
+        codedWidth:  (buf[avc1.d + 24] << 8) | buf[avc1.d + 25],
+        codedHeight: (buf[avc1.d + 26] << 8) | buf[avc1.d + 27],
+        optimizeForLatency: true
+      };
+      T = { n, size, off, key, order, rank, gop, gopOf };
+
+      VideoDecoder.isConfigSupported(config).then(r => {
+        if (dead) return;
+        if (!r || !r.supported) throw new Error('codec non supportato');
+        dec = new VideoDecoder({ output: onFrame, error: fail });
+        dec.configure(config);
+        // la coda del decoder si è svuotata: forse è il momento di spremere
+        // l'ultimo fotogramma (vedi drain) o di dargliene altri
+        dec.ondequeue = () => pump();
+        if (S.onUpdate) S.onUpdate();
+        pump();
+      }).catch(fail);
+    }
+
+    /* --- la finestra -------------------------------------------------------
+       Asimmetrica: qualche fotogramma alle spalle (per i piccoli ritorni del
+       trackpad), il grosso davanti, nella direzione in cui si sta andando. */
+    function windowOf() {
+      const c = Math.round(want);
+      const back = Math.max(2, Math.floor(cap * 0.25)), ahead = cap - back - 1;
+      const lo = dir >= 0 ? c - back : c - ahead;
+      const hi = dir >= 0 ? c + ahead : c + back;
+      return [Math.max(0, lo), Math.min(T.n - 1, hi), c];
+    }
+    // Tutti i byte del campione sono arrivati?
+    const has = s => T.off[s] + T.size[s] <= got;
+    const conv = new Set();    // usciti dal decoder, in copia verso la bitmap
+
+    /* Il prossimo fotogramma da chiedere: il primo che manca partendo da
+       quello sotto gli occhi e allargandosi, prima nella direzione di marcia
+       e poi alle spalle. */
+    function nextNeeded() {
+      const [lo, hi, c] = windowOf();
+      for (let d = 0; d <= hi - lo; d++) {
+        for (const i of (d ? [c + d * dir, c - d * dir] : [c])) {
+          if (i >= lo && i <= hi && !cache.has(i) && !flight.has(i) && !conv.has(i) &&
+              has(T.order[i])) return i;
+        }
+      }
+      return -1;
+    }
+
+    function feed(s) {
+      if (!flight.size) lastOut = performance.now();   // l'orologio del watchdog parte ora
+      dec.decode(new EncodedVideoChunk({
+        type: T.key[s] ? 'key' : 'delta',
+        timestamp: T.rank[s] * 1000,       // l'indice di presentazione, in µs fittizi
+        data: buf.subarray(T.off[s], T.off[s] + T.size[s])
+      }));
+      flight.add(T.rank[s]);
+      cur = s + 1 < T.n ? s + 1 : -1;
+    }
+
+    function pump() {
+      if (dead || !dec || !T || flushing) return;
+      try {
+        while (flight.size < FLIGHT) {
+          const i = nextNeeded();
+          if (i < 0) break;
+          const s = T.order[i];
+          /* Da dove partire: dal keyframe del gruppo del campione voluto,
+             oppure — se si sta già decodificando quel gruppo e non lo si è
+             superato — da dove ci si era fermati, senza rifare nulla. */
+          let a = T.gop[T.gopOf[s]];
+          if (cur > a && cur <= s && T.gopOf[cur] === T.gopOf[s]) a = cur;
+          for (let k = a; k <= s; k++) feed(k);
+        }
+      } catch (err) { fail(); return; }
+      /* Niente più da chiedere, ma l'ultimo fotogramma consegnato è ancora
+         dentro: esce solo insieme al successivo, o con un flush. Succede
+         solo a finestra completa, quindi su un fotogramma lontano da quello
+         che si sta guardando. */
+      if (flight.size && dec.decodeQueueSize === 0 && nextNeeded() < 0) drain();
+    }
+
+    function drain() {
+      flushing = true;
+      dec.flush().then(() => {
+        flushing = false;
+        flight.clear();      // tutto ciò che era dentro è uscito
+        cur = -1;            // e da qui il decoder vuole un keyframe
+        pump();
+      }, fail);
+    }
+
+    // Copia del fotogramma fuori dal decoder, alla risoluzione del canvas.
+    function onFrame(f) {
+      const i = Math.round(f.timestamp / 1000);
+      flight.delete(i);
+      lastOut = performance.now();
+      const [lo, hi] = windowOf();
+      if (dead || cache.has(i) || conv.has(i) || i < lo || i > hi) { f.close(); pump(); return; }
+      conv.add(i);
+      const w = cw, h = ch;
+      (bitmapOk
+        ? createImageBitmap(f, w === f.displayWidth ? undefined
+                               : { resizeWidth: w, resizeHeight: h, resizeQuality: 'high' })
+        : Promise.reject()
+      ).catch(() => {
+        // Browser che non sa fare una bitmap da un VideoFrame: si copia su
+        // un canvas, che per drawImage vale uguale.
+        bitmapOk = false;
+        const c = document.createElement('canvas');
+        c.width = w; c.height = h;
+        c.getContext('2d', { alpha: false }).drawImage(f, 0, 0, w, h);
+        return c;
+      }).then(img => {
+        f.close();
+        conv.delete(i);
+        if (dead || w !== cw) { free(img); return; }
+        free(cache.get(i));
+        cache.set(i, img);
+        trim();
+        const i0 = Math.floor(want);
+        if (i === i0 || i === i0 + 1) draw();
+        pump();
+      }, () => { f.close(); conv.delete(i); });
+      pump();     // nel decoder si è liberato un posto
+    }
+
+    /* Prima tutto ciò che è fuori dalla finestra, poi — solo se serve ancora
+       spazio — il più lontano. L'ordine conta: la finestra è asimmetrica, e
+       tagliare per pura distanza buttava via proprio i fotogrammi appena
+       decodificati in avanti per tenere quelli alle spalle. */
+    function trim() {
+      const [lo, hi] = windowOf();
+      for (const k of [...cache.keys()]) {
+        if (k < lo || k > hi) { free(cache.get(k)); cache.delete(k); }
+      }
+      if (cache.size <= cap) return;
+      const keys = [...cache.keys()].sort((a, b) => Math.abs(b - want) - Math.abs(a - want));
+      for (const k of keys) {
+        if (cache.size <= cap) break;
+        free(cache.get(k)); cache.delete(k);
+      }
+    }
+
+    /* --- il disegno --------------------------------------------------------
+       Sincrono, dentro apply(): è questo che lega l'immagine allo scroll
+       nello stesso fotogramma della pagina. Se un fotogramma non è ancora
+       pronto si mostra il più vicino che c'è; se non c'è niente si lascia il
+       canvas com'è, che è comunque l'ultima immagine giusta. */
+    function draw() {
+      if (!T || dead) return;
+      const i0 = Math.min(T.n - 1, Math.floor(want)), i1 = Math.min(T.n - 1, i0 + 1);
+      let a = BLEND ? Math.round((want - i0) * 48) / 48 : (want - i0 < 0.5 ? 0 : 1);
+      let A = cache.get(i0), B = cache.get(i1), ia = i0, ib = i1;
+      draws++;
+      if (!A && !B) misses++;
+      if (!A || !B) {
+        if (!A && !B) {
+          // il più vicino disponibile, entro pochi fotogrammi
+          for (let d = 1; d <= 6 && !A; d++) {
+            if (cache.has(i0 - d)) { A = cache.get(i0 - d); ia = i0 - d; }
+            else if (cache.has(i1 + d)) { A = cache.get(i1 + d); ia = i1 + d; }
+          }
+          if (!A) return;
+        } else if (!A) { A = B; ia = ib; }
+        a = 0;
+      }
+      if (a >= 1) { A = B; ia = ib; a = 0; }
+      const k = ia + '|' + (a ? ib + '|' + a : '');
+      if (k === lastDrawn) return;
+      lastDrawn = k;
+      try {
+        ctx.globalAlpha = 1;
+        ctx.drawImage(A, 0, 0, cw, ch);
+        if (a > 0) {
+          ctx.globalAlpha = a;
+          ctx.drawImage(B, 0, 0, cw, ch);
+        }
+      } catch (err) { lastDrawn = ''; /* immagine non disegnabile: si salta */ }
+      ctx.globalAlpha = 1;
+    }
+
+    S.ready = () => !!dec;
+    S.show = q => {
+      if (!T || dead) return;
+      const w = q * (T.n - 1);
+      if (Math.abs(w - want) > 0.02) dir = w > want ? 1 : -1;
+      want = w;
+      draw();
+      pump();
+      /* Watchdog: fotogrammi consegnati che non tornano da 5 secondi
+         (decoder inceppato) e l'intro resterebbe ferma per sempre. Con la
+         pagina visibile si passa al <video>; nascosta è normale che tutto
+         sia sospeso. */
+      if (flight.size && !flushing && !document.hidden && performance.now() - lastOut > 5000) fail();
+    };
+    /* A intro finita i fotogrammi in memoria non servono più: si liberano
+       (sono fino a 200 MB). Se si risale, il canvas ha ancora l'ultima
+       immagine e la finestra si ricostruisce in una frazione di secondo. */
+    S.release = () => {
+      cache.forEach(free); cache.clear(); lastDrawn = '';
+    };
+    // per il pannello ?diag=1: finestra, risoluzione, fotogramma a schermo,
+    // e quante volte il fotogramma voluto non era ancora pronto
+    S.debug = () => ({ want, dir, cap, flight: flight.size, keys: [...cache.keys()].sort((a, b) => a - b) });
+    S.stats = () => T
+      ? cache.size + '/' + cap + ' @' + cw + '×' + ch + ' · ' + (lastDrawn || '-') +
+        ' · mancati ' + misses + '/' + draws + ' · in volo ' + flight.size +
+        (loaded ? '' : ' · ' + (got >> 20) + 'MB')
+      : (got >> 10) + 'KB';
+    return S;
+  }
+
   // Pixel di scroll consumati dall'intro. Tutto ciò che ragiona in "quanto
   // sono sceso nella pagina" (sfondo 3D, nav compatta) deve sottrarli,
   // altrimenti al termine del filmato il sito si troverebbe già a metà delle
   // proprie animazioni invece che al proprio inizio.
   let scrollBase = 0;
+
+  // Il raccordo calcolato, in chiaro: lo legge solo il pannello ?diag=1.
+  let introMatchInfo = '';
 
   /* ===========================================================================
      1. WEBGL — nuvola di particelle che cambia forma con lo scroll
@@ -987,14 +1510,11 @@
 
     if (cue) cue.style.opacity = '0';   // entra alla fine, vedi apply()
 
-    let dur     = vid.duration || 8;
     let introPx = 0;   // corsa dell'ANIMAZIONE
     let landPx  = 0;   // corsa in più in cui la hero resta bloccata: vedi measureIntro
     let match   = { k: 1, tx: 0, ty: 0, sphere: 1, mask: false, maskY: 0 };
     let done    = false;
     let hintShown = true;   // stato del "Scorri per entrare": reversibile, vedi apply()
-    let lastFrame = -1;     // ultimo fotogramma CHIESTO al decoder
-    let wantFrame = -1;     // ultimo fotogramma VOLUTO dallo scroll
     let lastStageT = '', lastPageT = '', lastSceneT = '', lastWmT = '';
     let wmTxtOp = -1, wmPatchOp = -1;
 
@@ -1087,25 +1607,6 @@
                                ((vh - REF_H * s0) / 2).toFixed(2) + 'px) scale(' + s0.toFixed(5) + ')';
       if (t !== lastWmT) { lastWmT = t; wmEl.style.transform = t; }
     }
-
-    /* --- il fotogramma chiesto al decoder ---
-       Separare "voluto" da "chiesto" serve a una cosa sola, ed è la più
-       sentita col trackpad: un decoder che sta già cercando non accetta una
-       nuova richiesta, quindi prima si aspettava il giro successivo del
-       ticker per riprovare. Sono fino a sedici millisecondi di attesa per
-       ogni fotogramma, spesi a non fare nulla, ed è la differenza fra un
-       filmato che segue il dito e uno che lo rincorre a strappi. Ora appena
-       il decoder ha finito, se nel frattempo lo scroll è andato oltre, la
-       richiesta successiva parte da dentro l'evento `seeked`. */
-    function seekTo(idx) {
-      lastFrame = idx;
-      try {
-        vid.currentTime = Math.min(dur - 1e-3, (idx + 0.5) / REF_FPS);
-      } catch (err) { lastFrame = -1; /* rifiutata: si riprova al frame dopo */ }
-    }
-    vid.addEventListener('seeked', () => {
-      if (wantFrame >= 0 && wantFrame !== lastFrame) seekTo(wantFrame);
-    });
 
     /* --- quanto scroll dura l'intro ---
        In pixel, non in vh: su mobile 100vh cambia quando la barra degli
@@ -1333,15 +1834,21 @@
          non mentre lo si guarda volare (dove diventa un errore), e di sfocare
          in proporzione allo scarto stesso: su 16:9 la sfocatura resta a zero
          perché non c'è niente da nascondere. */
+      /* Solo ancore sul bordo SINISTRO, ed è una correzione, non un dettaglio.
+         Prima c'erano anche gli angoli destri del titolo e del filetto, ma il
+         bordo destro di quei blocchi non è testo: è la fine della colonna,
+         cioè dipende solo dalla larghezza della finestra. Sotto cover, su
+         16:10, il filmato è tagliato ai lati e la sua colonna esce dallo
+         schermo, mentre quella vera no: confrontarle dava k=0,90 anche dove
+         i due titoli erano grandi uguali — e il filmato si restringeva del
+         dieci per cento durante lo scambio, contro il senso del volo.
+         Il testo è allineato a sinistra e ancorato in basso: alto e basso del
+         titolo danno la scala, il filetto il punto d'appoggio. Il titolo pesa
+         5 perché è la massa che l'occhio usa come riferimento. */
       const pts = [
-        /* Il blocco del titolo pesa 5 e il filetto 1. Non è arbitrario: il
-           titolo occupa da solo quasi metà del quadro ed è l'unica cosa che
-           l'occhio usa davvero come riferimento — e fra le pesature provate è
-           anche quella che minimizza lo scarto peggiore. */
-        [toScreen(ref.titleTL), [t.left,  t.top],    5],
-        [toScreen(ref.titleBR), [t.right, t.bottom], 5],
-        [toScreen(ref.ruleL),   [m.left,  m.top],    1],
-        [toScreen(ref.ruleR),   [m.right, m.top],    1]
+        [toScreen(ref.titleTL),                    [t.left, t.top],    5],
+        [toScreen([ref.titleTL[0], ref.titleBR[1]]), [t.left, t.bottom], 5],
+        [toScreen(ref.ruleL),                      [m.left, m.top],    1]
       ];
 
       let W = 0, ax = 0, ay = 0, bx = 0, by = 0;
@@ -1365,29 +1872,35 @@
          chi legge apply(), dove k/tx/ty e ck/ctx/cty vengono usati insieme. */
       const k = 1, tx = 0, ty = 0;
 
-      /* Quanto sfocare: ormai quasi mai. Si misura lo scarto che RESTA dopo
-         la correzione sull'ancora peggiore, e la sfocatura è una frazione di
-         quello, con un tetto basso.
-
-         La taratura è stata rifatta al ribasso di proposito. Sfocare è il
-         modo più economico di nascondere un disallineamento, ma il prezzo lo
-         paga tutto il filmato: è un filter su un elemento a schermo intero,
-         cioè un layer in più da comporre a ogni fotogramma proprio nel punto
-         più delicato della corsa — e si vede, perché quello che si nasconde
-         è anche quello che si stava guardando. Al posto della sfocatura fa
-         ora lo stesso lavoro una dissolvenza più ripida (vedi `fade` in
-         apply): meno tempo con due immagini sovrapposte, meno bisogno di
-         renderle illeggibili. Così su 16:9 e su 16:10 — cioè su quasi tutti
-         gli schermi — non si accende affatto, e resta solo per i rapporti
-         davvero lontani da quello del filmato, dove lo scarto supera i
-         quarantacinque pixel e qualcosa va comunque coperto. */
-      let worst = 0;
+      /* Quanto sfocare. Due misure: lo scarto che RESTA dopo la correzione
+         sull'ancora peggiore, e quanto il filmato deve VIAGGIARE per
+         arrivare sulla pagina. La sfocatura vive solo dentro
+         l'attraversamento (la scala con `thru`), quindi durante il volo il
+         filmato resta nitido come è stato codificato. */
+      let worst = 0, travel = 0;
       for (const [a, b] of pts) {
         worst = Math.max(worst,
                          Math.abs(ck * a[0] + ctx - b[0]),
                          Math.abs(ck * a[1] + cty - b[1]));
+        // quanto si sposta questo punto durante l'attraversamento
+        travel = Math.max(travel, Math.hypot(ck * a[0] + ctx - a[0], ck * a[1] + cty - a[1]));
       }
-      const blur = Math.min(2, worst / 45);
+      /* Rivista dopo aver corretto le ancore, e verso l'alto: la misura
+         dello scarto residuo da sola non bastava. Uno scambio in cui il
+         filmato SCIVOLA di settanta pixel mentre si dissolve, perfettamente
+         a fuoco, mostra due titoli nitidi sfasati che si inseguono — è il
+         "doppio" che si vedeva sul desktop e non sul telefono, dove la
+         sfocatura è fissa a 6. Qui segue il movimento: zero dove filmato e
+         pagina coincidono già (16:9 pieno, dove lo scambio è una dissolvenza
+         fra due immagini uguali e non c'è niente da nascondere), fino a 6
+         come sul telefono quando lo spostamento è grande. */
+      /* Più bassa del telefono di proposito: qui pagina e filmato viaggiano
+         SOVRAPPOSTI (vedi `carry` in apply), quindi non c'è un disallineamento
+         da coprire — la sfocatura fa solo da messa a fuoco, il testo vero che
+         emerge nitido da quello del filmato che si sfoca, e copre le due sfere
+         (quella girata e quella viva) che non possono coincidere punto per
+         punto. */
+      const blur = Math.min(4, Math.max(worst / 10, travel / 25));
 
       /* La nav è il punto in cui questo metodo tocca il proprio limite, ed è
          onesto dirlo: è ancorata in ALTO mentre tutta la hero è ancorata in
@@ -1427,7 +1940,8 @@
          la stessa ragione della nav: conta la scala alla consegna. */
       const sphere = (REF_H * s0 * ck) / vh;
 
-      return { k, tx, ty, ck, ctx, cty, blur, sphere, mask, maskY, fitted: true };
+      return { k, tx, ty, ck, ctx, cty, blur, worst, travel, sphere, mask, maskY,
+               carry: true, fitted: true };
     }
 
     /* Disegna lo stato corrispondente a una posizione `p` (0..1) della corsa.
@@ -1448,28 +1962,11 @@
          mai, e resta reversibile come tutto il resto. */
       const past = scrollBase > 0 && scrollY >= scrollBase;
 
-      /* 1 — il fotogramma.
-         Tre accorgimenti, e servono tutti e tre:
-
-         · si ragiona in NUMERO di fotogramma, non in secondi. Fra due
-           posizioni di scroll vicinissime il fotogramma da mostrare è lo
-           stesso: senza questo controllo si chiederebbero decine di ricerche
-           al secondo che finiscono tutte sulla stessa immagine — lavoro
-           inutile che il decoder paga con micro-blocchi.
-         · si cerca il CENTRO del fotogramma (+0,5). Puntare al confine
-           esatto lascia decidere all'arrotondamento quale dei due mostrare,
-           e a ogni frame può cambiare idea: è esattamente lo sfarfallio.
-         · non si chiede nulla mentre `seeking` è true. Accodare ricerche a
-           un decoder che sta già cercando è il modo più rapido per farlo
-           singhiozzare. */
-      /* Basta avere i metadati (readyState 1): assegnare currentTime scatena
-         comunque il recupero del pezzo di file che serve, e il fotogramma
-         arriva. Pretendere readyState 2 significava, su iOS, non cercare mai. */
-      if (vid.readyState >= 1) {
-        const nFrames = Math.max(1, Math.round(dur * REF_FPS));
-        wantFrame = Math.round(clamp01(p / V_END) * (nFrames - 1));
-        if (wantFrame !== lastFrame && !vid.seeking) seekTo(wantFrame);
-      }
+      /* 1 — il fotogramma. Il come dipende dal motore (frameSource o
+         videoSource, sezione 0): qui si dice solo DOVE si è nel filmato.
+         `film` si rilegge ogni volta perché può cambiare a corsa iniziata,
+         se il motore a fotogrammi cede il posto al <video>. */
+      film.show(clamp01(p / V_END));
 
       /* 1b — il wordmark vero segue il suo gemello inciso nel filmato.
          Le soglie sono in frazione del FILMATO, non della corsa: qui si
@@ -1569,7 +2066,8 @@
         'translate(' + vTx.toFixed(2) + 'px,' + vTy.toFixed(2) + 'px) scale(' + vk.toFixed(5) + ')';
       if (stageT !== lastStageT) { lastStageT = stageT; stage.style.transform = stageT; }
 
-      const filt = (blurA >= BLUR_MIN && thru > 0) ? 'blur(' + blur + 'px)' : '';
+      // a corsa finita niente filtro, anche se apply() continua a girare
+      const filt = (blurA >= BLUR_MIN && thru > 0 && p < 0.999 && !past) ? 'blur(' + blur + 'px)' : '';
       if (filt !== stage.style.filter) stage.style.filter = filt;
 
       /* La pagina vera sta ferma sotto il vetro e si muove solo con la camera
@@ -1582,12 +2080,34 @@
          andrebbe rimessa se un giorno servisse. */
       const arrive = 1 + THRU_ARR * (1 - thru);
       const pk  = e * arrive;
-      const pTx = cx * (1 - pk), pTy = cy * (1 - pk);
-      const pageT = 'translate(' + pTx.toFixed(2) + 'px,' + pTy.toFixed(2) + 'px) scale(' + pk.toFixed(5) + ')';
+      let pageT, navT;
+      if (match.carry) {
+        /* LAPTOP — la pagina viaggia SOVRAPPOSTA al filmato.
+           Il filmato va dall'identità a C (la correzione misurata) come
+           sopra. La pagina fa lo stesso identico movimento, ma partendo da
+           C⁻¹: cioè all'inizio dello scambio è impaginata esattamente come
+           quella ripresa nel filmato, e alla fine torna a sé stessa. In ogni
+           istante le due vengono disegnate con la stessa trasformazione
+           composta, quindi coincidono per tutta la dissolvenza — anche dove C
+           è grande, come sui portatili larghi e bassi dove il filmato deve
+           rimpicciolirsi di un quinto. Quello che si vede è una sola pagina
+           che si assesta, non due che si inseguono.
+           La nav viaggia con la pagina quando alla fine combacia con quella
+           del filmato (entro 14px, vedi computeMatch): ferma, se ne vedevano
+           due a metà strada. Quando invece non combacia la fascia alta del
+           filmato è già spenta sul nero, e la nav vera resta al suo posto. */
+        const pkc = ck / (match.ck || 1);
+        pageT = 'translate(' + (ctx - pkc * (match.ctx || 0)).toFixed(2) + 'px,' +
+                               (cty - pkc * (match.cty || 0)).toFixed(2) + 'px) scale(' + pkc.toFixed(5) + ')';
+        navT = match.mask ? '' : pageT;
+      } else {
+        const pTx = cx * (1 - pk), pTy = cy * (1 - pk);
+        pageT = navT = 'translate(' + pTx.toFixed(2) + 'px,' + pTy.toFixed(2) + 'px) scale(' + pk.toFixed(5) + ')';
+      }
       if (pageT !== lastPageT) {
         lastPageT = pageT;
         stick.style.transform = pageT;
-        if (navEl) navEl.style.transform = pageT;
+        if (navEl) navEl.style.transform = navT;
       }
 
       // sfondo 3D: stesso arrivo della pagina + assestamento della sfera
@@ -1661,9 +2181,14 @@
           // descrivevano, altrimenti risalendo il controllo "è cambiato?"
           // confronterebbe con qualcosa che non è più sull'elemento
           lastStageT = lastPageT = lastSceneT = '';
+          // i fotogrammi in memoria si liberano poco dopo, non subito: chi si
+          // ferma esattamente sul bordo e torna su di un soffio li ritrova
+          clearTimeout(releaseT);
+          releaseT = setTimeout(() => { if (done) film.release(); }, 1500);
         }
       }
     }
+    let releaseT = 0;
 
     /* --- collegamento allo scroll ---
        scrub non è un vezzo: trasforma i gradini della rotella in una corsa
@@ -1703,6 +2228,10 @@
       if (navEl) navEl.style.transform = '';
 
       match = computeMatch();
+      introMatchInfo = 'ck ' + (match.ck || 1).toFixed(3) +
+                       ' t ' + (match.ctx || 0).toFixed(0) + ',' + (match.cty || 0).toFixed(0) +
+                       ' scarto ' + (match.worst || 0).toFixed(0) + ' corsa ' + (match.travel || 0).toFixed(0) +
+                       ' blur ' + (match.blur || 0).toFixed(1);
 
       stick.style.transform = ps;
       if (navEl) navEl.style.transform = pn;
@@ -1740,18 +2269,12 @@
       fitWordmark();
     }
 
-    // Metadati: la durata reale sostituisce la stima appena disponibile.
-    if (vid.readyState < 1) {
-      vid.addEventListener('loadedmetadata', () => {
-        dur = vid.duration || dur;
-        apply(proxy.p);
-      }, { once: true });
-    } else {
-      dur = vid.duration || dur;
-    }
-    // Primo fotogramma disponibile: si ridisegna, altrimenti finché non si
-    // scorre il video resterebbe vuoto.
-    vid.addEventListener('loadeddata', () => apply(proxy.p), { once: true });
+    // Il motore avvisa quando ha qualcosa di nuovo da mostrare (metadati,
+    // primo fotogramma): si ridisegna, altrimenti finché non si scorre il
+    // filmato resterebbe vuoto. Agganciato al motore attuale e, tramite
+    // frameSource, anche a quello di riserva se dovesse subentrare.
+    film.onUpdate = () => apply(proxy.p);
+    if (film.ready()) apply(proxy.p);
 
     // Se il file non arriva proprio, meglio un sito senza intro che un sito
     // con dieci schermate di nero.
@@ -1760,7 +2283,7 @@
        falso allarme — ed era proprio il falso allarme che su iPhone spegneva
        un'intro perfettamente funzionante. */
     setTimeout(() => {
-      if (vid.readyState >= 1) return;
+      if (film.ready()) return;
       if (st) st.kill();
       tween.kill();
       if (cue) cue.style.opacity = '';
@@ -2141,12 +2664,13 @@
      la funzione esce alla prima riga. */
   function introDiag() {
     if (!/[?&]diag=1(&|$)/.test(location.search)) return;
+    window.__introFilm = () => film;   // per ispezionare il motore dalla console
 
     const v = introVideo;
     const righe = [
       ['schermo',        () => innerWidth + '×' + innerHeight],
       ['touch',          () => isTouch],
-      ['verticale',      () => isPortrait],
+      ['verticale',      () => isPortraitPhysical],
       ['-> filmato',     () => ref.src.split('/').pop()],
       ['meno movimento', () => reduced],
       ['risparmio dati', () => (netInfo ? !!netInfo.saveData : 'n/d')],
@@ -2156,6 +2680,9 @@
       ['INTRO ATTIVA',   () => introOn],
       ['corsa intro',    () => document.documentElement.style
                                  .getPropertyValue('--intro-scroll') || '(vuota)'],
+      ['motore',         () => (film ? film.kind : 'nessuno')],
+      ['fotogrammi',     () => (film ? film.stats() : 'n/d')],
+      ['raccordo',       () => introMatchInfo || 'n/d'],
       ['video pronto',   () => (v ? v.readyState : 'n/d')],
       ['video errore',   () => (v && v.error ? v.error.code : 'no')],
       ['secondo video',  () => (v ? v.currentTime.toFixed(2) : 'n/d')]

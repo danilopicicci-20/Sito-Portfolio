@@ -114,7 +114,17 @@ body{
   font-family:var(--sans);
   font-weight:400;
   line-height:1.6;
+  /* clip, NON hidden — ed è la differenza fra un'intro che funziona e una che
+     no. Con hidden sia qui sia su <html>, il body diventa un contenitore di
+     scroll a sé (overflow-y passa da solo ad auto) e position:sticky si
+     aggancia a LUI invece che alla finestra: il body non scorre mai, quindi
+     .hero__sticky non resta mai incollata. Risultato su Chrome desktop: a fine
+     filmato la hero vera era già tremila pixel più su, e il video si
+     dissolveva sul vuoto. clip taglia allo stesso modo ma non crea un
+     contenitore di scroll. La riga con hidden resta per i browser che clip
+     non lo conoscono (Safari < 16), dove vale il comportamento di prima. */
   overflow-x:hidden;
+  overflow-x:clip;
   -webkit-font-smoothing:antialiased;
 }
 body.is-loading{ overflow:hidden; height:100vh; }
@@ -233,6 +243,15 @@ html.has-intro .intro.is-done{ display:none; }
      fotogramma cercato */
   transform:translateZ(0);
 }
+
+/* Il canvas del motore a fotogrammi (main.js, frameSource). Prende il posto
+   del <video> quando il browser sa decodificare da sé (WebCodecs): stesse
+   regole di impaginazione — object-fit:cover vale anche per un canvas — quindi
+   tutte le misure del raccordo restano identiche. Spento finché JS non accende
+   .is-frames; se il motore fallisce la classe sparisce e torna il <video>. */
+.intro__frames{ display:none; }
+.intro.is-frames .intro__frames{ display:block; }
+.intro.is-frames video.intro__video{ display:none; }
 
 /* Prima metà dell'intro: il filmato copre tutto lo schermo, quindi la grana
    animata e qualunque altro movimento della pagina sono lavoro sprecato che
@@ -595,6 +614,48 @@ html.has-intro #scene{ transform-origin:0 0; }
 .hero .btn,
 .hero__scroll{ opacity:0; }
 .hero__scrollline{ width:70px; height:1px; background:var(--line); overflow:hidden; }
+
+/* --- Hero su desktop: la composizione del filmato, in scala ------------------
+   L'ultimo fotogramma del filmato del laptop È questa hero, impaginata a
+   1920×1080. Lì ci sta tutta, con trenta pixel di respiro. Ma con i clamp()
+   di sopra il testo rimpicciolisce più lentamente dello schermo, e già a
+   1440×900 la composizione era più alta della finestra di un centinaio di
+   pixel: essendo ancorata in basso, debordava in alto e il brandmark finiva
+   sotto la nav. Per chiunque, non solo durante l'intro — e nell'istante del
+   raccordo il filmato mostrava una hero che la pagina vera non aveva.
+
+   Qui ogni misura della hero è scritta in --u, "un pixel del filmato": la
+   frazione di schermo che un pixel occupava a 1920×1080. Il risultato è la
+   stessa composizione del video, in scala, a qualunque altezza: a 1920×1080
+   i valori sono identici a quelli di sopra (sono quelli da cui è stato
+   girato il filmato), più in basso tutto scende in proporzione invece che a
+   pezzi. Gli altri tre vincoli:
+     · (altezza − 120px) / 960 — la nav non scala, e sugli schermi bassi
+       (1366×657, il portatile più diffuso) la sola proporzione lasciava il
+       brandmark sotto il logo della nav. A 1080 vale esattamente 1, quindi
+       lì non cambia nulla;
+     · larghezza / 1300 — solo per finestre strette e alte, dove il titolo
+       altrimenti non starebbe in riga;
+     · 1,5 — ferma la crescita sui monitor 4K.
+
+   I testi piccoli hanno un minimo di leggibilità: lì la proporzione cede,
+   ma sono dettagli che nel raccordo non si vedono. */
+@media (min-width:900px){
+  .hero__sticky{
+    --u:min(calc(100vh / 1080), calc((100vh - 120px) / 960), calc(100vw / 1300), 1.5px);
+    --u:min(calc(100svh / 1080), calc((100svh - 120px) / 960), calc(100vw / 1300), 1.5px);
+    padding:calc(120 * var(--u)) var(--pad) calc(44 * var(--u));
+  }
+  .brandmark{ gap:calc(12 * var(--u)); margin-bottom:calc(32 * var(--u)); }
+  .brandmark__icon{ width:max(54px, calc(86 * var(--u))); height:max(54px, calc(86 * var(--u))); }
+  .brandmark__word{ font-size:max(14px, calc(22 * var(--u))); }
+  .hero__eyebrow{ font-size:max(11px, calc(12.5 * var(--u))); margin-bottom:calc(40 * var(--u)); }
+  .hero__title{ font-size:calc(152 * var(--u)); margin-bottom:calc(60 * var(--u)); }
+  .hero__meta{ padding-top:calc(28 * var(--u)); gap:calc(40 * var(--u)); }
+  .hero__sub{ font-size:max(15px, calc(19 * var(--u))); }
+  .hero__scroll{ margin-top:calc(44 * var(--u)); font-size:max(10px, calc(12 * var(--u))); }
+  .hero__scrollline{ width:calc(70 * var(--u)); }
+}
 .hero__scrollline i{ display:block; width:30%; height:100%; background:var(--accent); animation:sl 2.2s var(--ease) infinite; }
 @keyframes sl{ 0%{transform:translateX(-110%)} 100%{transform:translateX(340%)} }
 

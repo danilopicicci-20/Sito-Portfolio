@@ -39,7 +39,11 @@
     #   img-src     data:    serve per la texture "grana" generata via SVG inline nel CSS
     #   font-src    'self'   i woff2 sono in assets/fonts/
     #   connect-src 'self'   il sito non chiama nessuna API: qualunque fetch verso
-    #                        l'esterno verrebbe bloccato (utile contro l'esfiltrazione)
+    #                        l'esterno verrebbe bloccato (utile contro l'esfiltrazione).
+    #                        Serve però verso il NOSTRO dominio: l'intro desktop
+    #                        scarica il filmato con fetch() per decodificarlo da sé
+    #                        (main.js, frameSource). Con 'none' ripiegherebbe in
+    #                        silenzio sul <video>, più scattoso.
     #   media-src   'self'   serve il filmato dell'intro (assets/video/). Con
     #                        'none' il <video> verrebbe bloccato dal browser
     #                        e l'intro non partirebbe mai in produzione.
@@ -106,8 +110,10 @@
 # Il filmato dell'intro: pesante, e identico a ogni visita. Un anno di cache.
 # Accept-Ranges è ciò che permette al browser di saltare a un punto qualsiasi
 # del file senza scaricarlo tutto — è il meccanismo su cui poggia lo scrubbing
-# fotogramma per fotogramma. Netlify lo serve già di suo, la riga è qui per
-# rendere esplicito che quel comportamento è un requisito, non un dettaglio.
+# del <video> (telefono, e riserva sul desktop). Netlify lo serve già di suo,
+# la riga è qui per rendere esplicito che quel comportamento è un requisito.
+# Sul desktop il file viene invece scaricato intero con fetch(): la stessa
+# cache di un anno vale anche per quella richiesta.
 [[headers]]
   for = "/assets/video/*"
   [headers.values]
