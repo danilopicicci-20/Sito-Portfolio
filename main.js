@@ -260,7 +260,9 @@
          fotogrammi la scritta "FLUIDS STUDIO" incisa nel render è stata
          tolta e il fondo ricostruito: al suo posto c'è il testo vero (wm). */
       frames:  { base: 'assets/frames/phone/', count: 213, sizes: [1296], low: 216,
-                 crop: { x: 424, w: 432 }, v: FRAMES_V },
+                 crop: { x: 424, w: 432 }, v: FRAMES_V,
+                 // motore 3: serie 768 tutta in memoria, ingrandita dalla GPU a 1296
+                 gpu: { set: 768, out: [1296, 2160], sharp: 0.5 } },
       /* Il wordmark d'apertura del telefono, come quello del laptop: misurato
          sull'inchiostro del fotogramma 0 (FLUIDS 585→696, maiuscole 182→197;
          STUDIO 603→677, 205→215). La scritta incisa nei fotogrammi non c'è
@@ -364,17 +366,18 @@
                     // ?motore=video forza il motore di riserva: serve a
                     // confrontare i due sullo stesso dispositivo
                     !/[?&]motore=video(&|$)/.test(location.search);
-  // il motore 3 dove il browser ha WebCodecs; ?motore=webp forza il motore 2
-  const canCodec = canFrames && typeof VideoDecoder === 'function' &&
-                   typeof EncodedVideoChunk === 'function' &&
-                   !/[?&]motore=webp(&|$)/.test(location.search);
+  // il motore 3 dove c'è WebGL2 e le immagini si possono scaricare con fetch
+  // (non da file://); ?motore=2d forza il motore 2
+  const canGPU = canFrames && typeof WebGL2RenderingContext !== 'undefined' &&
+                 location.protocol !== 'file:' &&
+                 !/[?&]motore=2d(&|$)/.test(location.search);
   let film = null;
 
   if (introOn) {
     document.documentElement.classList.add('has-intro');
     // Il file scelto qui, e non con più <source>: così il telefono scarica
     // solo i fotogrammi del telefono e il desktop solo i suoi.
-    film = !(ref.frames && canFrames) ? videoSource() : canCodec ? codecSource() : frameSource();
+    film = !(ref.frames && canFrames) ? videoSource() : canGPU ? gpuSource() : frameSource();
   }
 
   /* Sblocco del buffer — è questo il punto in cui iOS si comporta come nessun
@@ -457,37 +460,37 @@
     return S;
   }
 
-  /* --- Motore 3: i fotogrammi decodificati dalla scheda video ---------------
+  /* --- Motore 3: i fotogrammi tenuti sulla scheda video --------------------
 
-     Misurato sul campo, il limite del motore 2 non era scaricare né
-     decodificare: era il PASSAGGIO alla GPU. Una bitmap WebP decodificata sta
-     nella memoria del processore, e la prima volta che la si disegna il
-     browser la copia sulla scheda video: 11 MB per un fotogramma del
-     telefono, 8-15 per quelli del desktop, 7-13 ms ogni volta, sul thread
-     della pagina. Nello scroll veloce entrano due o tre fotogrammi nuovi a
-     ogni giro, il giro supera i 16 ms e l'immagine perde colpi: lo "scatto".
-     Ed è la stessa ragione per cui ne stavano pochi in memoria (ogni
-     fotogramma esisteva due volte, sul processore e sulla GPU), quindi la
-     serie leggera entrava spesso in scena: lo "sgranato".
+     Misurato sul campo, con il refresh vero dello schermo, il motore 2 non
+     perde mai un fotogramma della pagina: le WebP si decodificano nei thread
+     di sfondo del browser, lontano dallo scroll. Il suo limite era la
+     memoria. Una bitmap decodificata pesa 4 byte a pixel (8 MB a 1920×1080),
+     ne stavano una trentina, e quando lo scroll usciva da quella finestra
+     entrava in scena la serie leggera: lo "sgranato".
 
-     Qui gli stessi fotogrammi sono compressi come video H.264 a qualità
-     costante (assets/frames/<filmato>/h264/: stesso peso dei WebP, scarto
-     dall'originale sotto la soglia del visibile) e li decodifica il decoder
-     hardware della scheda video (WebCodecs), fuori dal thread della pagina:
-     4 ms a fotogramma, e il fotogramma nasce già sulla GPU. Copiarlo in una
-     texture costa un millisecondo, una volta sola; da lì disegnarlo, o
-     dissolverlo nel successivo, non costa praticamente nulla.
+     Qui le stesse WebP, decodificate allo stesso modo, si copiano sulla
+     scheda video come luminanza a piena risoluzione più colore a mezza
+     (YUV 4:2:0): 1,5 byte a pixel. È il formato in cui le WebP conservano
+     già le immagini — il colore a mezza risoluzione è quello che c'è nel
+     file — quindi non si perde nulla, e nella stessa memoria ne stanno quasi
+     tre volte tanti. Sul computer ci sta il filmato INTERO: preparato una
+     volta mentre si guarda la prima schermata, poi durante lo scroll non si
+     decodifica più niente, si sceglie solo quale texture disegnare. Sul
+     telefono, con meno memoria, resta una finestra di 66 fotogrammi, che si
+     riempie a grana crescente: prima uno ogni otto, poi uno ogni quattro,
+     poi tutti — così in un colpo deciso l'immagine scorre comunque su
+     fotogrammi nitidi, dissolti fra loro, invece di sgranarsi.
 
-     Il video è a gruppi di 8 fotogrammi (il primo completo, gli altri come
-     differenza dal precedente), un file per gruppo: si scaricano in ordine
-     di urgenza come prima, e si decodifica sempre un gruppo intero — in
-     avanti o all'indietro costa lo stesso, perché i fotogrammi decodificati
-     restano tutti pronti nelle texture.
+     (Provato e scartato: lo stesso filmato in H.264 decodificato dal chip
+     video. Decodifica rapidissima, ma su Chrome per Windows lavora nello
+     stesso processo che compone la pagina, e mentre decodifica lo scroll
+     perde fotogrammi fino a 80 ms.)
 
-     Dove WebCodecs o WebGL2 mancano, o qualcosa va storto a metà corsa, il
-     motore 2 prende il posto di questo senza che si veda. */
-  function codecSource() {
-    const S = { kind: 'h264', onUpdate: null };
+     Dove WebGL2 manca, o il contesto si perde a metà corsa, il motore 2
+     prende il posto di questo senza che si veda. */
+  function gpuSource() {
+    const S = { kind: 'gpu', onUpdate: null };
     const F = ref.frames;
     const canvas = document.getElementById('introFrames');
     let gl = null;
@@ -502,43 +505,48 @@
 
     const N = F.count;
     const MB = 1024 * 1024, ram = navigator.deviceMemory || 0;
-    /* Memoria per le texture. Ogni fotogramma ora esiste UNA volta sola,
-       sulla GPU: a parità di memoria ne stanno quasi il doppio di prima. */
-    const BUDGET = F.crop ? 280 * MB : ram >= 8 ? 420 * MB : ram ? 200 * MB : 300 * MB;
+    /* Memoria per le texture: sul computer abbastanza per il filmato intero
+       a 1920 (522 MB), tranne dove il browser dice che la RAM è poca. */
+    /* Il telefono usa una serie a parte (F.gpu): 768×1280, ingrandita dalla
+       GPU a ogni disegno. Il filmato del telefono nasce a 720p — della
+       striscia visibile esistono 432 pixel veri di larghezza, lo screenshot
+       sullo schermo ne ha 672 — quindi a 768 c'è già tutto il dettaglio
+       reale, e i 213 fotogrammi stanno interi in 314 MB. La serie 1296 resta
+       per il motore 2. */
+    const P = F.gpu || null;
+    const BUDGET = P ? 340 * MB : ram && ram < 8 ? 300 * MB : 560 * MB;
     const BACK   = F.crop ? 0.3 : 0.4;   // quota della finestra alle spalle
-    const FETCH  = 4;                    // gruppi scaricati in parallelo
+    const FETCH  = 6;                    // download in parallelo
+    const DECODE = Math.max(2, Math.min(6, (navigator.hardwareConcurrency || 4) - 2));
+    const QUEUE  = 4;                    // decodificati in attesa della copia
     const KEEP   = 14;                   // texture tenute a intro finita
     const MAXGAP = 12;                   // oltre, due fotogrammi non si dissolvono
 
     // stessa scelta della serie del motore 2: la più piccola che copre i pixel fisici
     const s0   = Math.max(innerWidth / ref.fw, innerHeight / ref.fh) || 1;
     const need = ref.fw * s0 * (devicePixelRatio || 1);
-    const SET  = F.sizes.length < 2 || need <= F.sizes[0] * 1.1 ? F.sizes[0] : F.sizes[1];
+    const SET  = P ? P.set : F.sizes.length < 2 || need <= F.sizes[0] * 1.1 ? F.sizes[0] : F.sizes[1];
     const W = SET, H = F.crop ? Math.round(W * ref.fh / F.crop.w) : Math.round(W * ref.fh / ref.fw);
-    // 1,5 byte a pixel: luminanza intera, colore a mezza risoluzione (vedi sotto)
-    const cap = Math.max(16, Math.min(128, Math.floor(BUDGET / (W * H * 1.5))));
-    const url = p => F.base + 'h264/' + SET + p + '?v=' + F.v;
+    const OW = P ? P.out[0] : W, OH = P ? P.out[1] : H;   // misura del canvas
+    const cap = Math.max(16, Math.min(N, Math.floor(BUDGET / (W * H * 1.5))));
+    const urlOf = i => F.base + SET + '/' + String(i).padStart(3, '0') + '.webp?v=' + F.v;
 
-    let idx = null, G = 8, nG = 0, offs = null;   // indice: dimensioni dei fotogrammi
-    const bins = [], tries = [];                  // gruppi scaricati
-    const fetching = new Set();
+    const src = new Array(N).fill(null), tries = new Uint8Array(N);
+    const fetching = new Set(), decoding = new Set();
+    const queue = new Map();                      // fotogramma → bitmap da copiare
     const cache = new Map();                      // fotogramma → texture
     const spare = [];                             // texture libere
-    let dec = null, errors = 0, dead = false, ready = false;
+    let dead = false, ready = false;
     let want = 0, dir = 1, turn = 0, lastDrawn = '';
-    let draws = 0, held = 0, decoded = 0, stored = 0, uploadMs = 0;
+    let draws = 0, held = 0, decoded = 0, stored = 0, uploadMs = 0, nSrc = 0;
 
-    canvas.width = W; canvas.height = H;
+    canvas.width = OW; canvas.height = OH;
     introEl.classList.add('is-frames');
 
     /* --- la GPU --------------------------------------------------------------
-       Ogni fotogramma si conserva come luminanza a piena risoluzione più
-       colore a mezza (YUV 4:2:0): 1,5 byte a pixel invece di 4. È esattamente
-       il formato in cui il video H.264 porta già i suoi fotogrammi — il
-       colore a mezza risoluzione è quello che c'è nel file — quindi non si
-       perde nulla, e nella stessa memoria ne stanno quasi tre volte tanti.
-       Il decoder consegna RGB: una texture d'appoggio lo riceve, e due
-       passaggi sulla GPU lo riscrivono nel fotogramma (Y, poi UV). */
+       La bitmap decodificata entra in una texture d'appoggio, e due passaggi
+       sulla GPU la riscrivono nel suo posto: Y a piena risoluzione, UV a
+       mezza. Il disegno fa il contrario, e fra due fotogrammi li dissolve. */
     const VS = '#version 300 es\nuniform float flip;out vec2 uv;void main(){' +
                'vec2 p=vec2(gl_VertexID==1?3.:-1.,gl_VertexID==2?3.:-1.);' +
                'uv=vec2(p.x*.5+.5,.5+p.y*.5*flip);gl_Position=vec4(p,0.,1.);}';
@@ -550,19 +558,38 @@
     const FS_D = HEAD + 'uniform sampler2D YA,CA,YB,CB;uniform float a;' +
                  'vec3 rgb(sampler2D Y,sampler2D C){float y=texture(Y,uv).r;vec2 c=texture(C,uv).rg-.5;' +
                  'return vec3(y+1.402*c.y,y-.344136*c.x-.714136*c.y,y+1.772*c.x);}' +
-                 // + lo scarto medio misurato fra il video e i fotogrammi originali (meno di un livello su 255)
-                 'void main(){vec3 c=rgb(YA,CA);if(a>0.)c=mix(c,rgb(YB,CB),a);' +
-                 'o=vec4(clamp(c+vec3(.8,-.5,.7)/255.,0.,1.),1.);}';
+                 'void main(){vec3 c=rgb(YA,CA);if(a>0.)c=mix(c,rgb(YB,CB),a);o=vec4(clamp(c,0.,1.),1.);}';
     function program(fs) {
       const p = gl.createProgram();
-      for (const [type, src] of [[gl.VERTEX_SHADER, VS], [gl.FRAGMENT_SHADER, fs]]) {
-        const s = gl.createShader(type); gl.shaderSource(s, src); gl.compileShader(s); gl.attachShader(p, s);
+      for (const [type, s] of [[gl.VERTEX_SHADER, VS], [gl.FRAGMENT_SHADER, fs]]) {
+        const sh = gl.createShader(type); gl.shaderSource(sh, s); gl.compileShader(sh); gl.attachShader(p, sh);
       }
       gl.linkProgram(p);
       return gl.getProgramParameter(p, gl.LINK_STATUS) ? p : null;
     }
+    /* Telefono: il disegno è in due passaggi. Il primo dissolve i due
+       fotogrammi alla loro misura e ridà nitidezza alla luminanza (una
+       maschera di contrasto limitata dai vicini, così non fa aloni: la
+       stessa usata per preparare la serie 1296). Il secondo ingrandisce
+       alla misura del canvas con un filtro bicubico (Catmull-Rom). */
+    const FS_B = HEAD + 'uniform sampler2D YA,CA,YB,CB;uniform float a,sharp;' +
+                 'float Y(vec2 p){float y=texture(YA,p).r;return a>0.?mix(y,texture(YB,p).r,a):y;}' +
+                 'void main(){vec2 px=1./vec2(textureSize(YA,0));' +
+                 'float c=Y(uv),n=Y(uv-vec2(0.,px.y)),s=Y(uv+vec2(0.,px.y)),e=Y(uv+vec2(px.x,0.)),w=Y(uv-vec2(px.x,0.));' +
+                 'float y=clamp(c+sharp*(4.*c-n-s-e-w)*.25,min(min(min(n,s),min(e,w)),c),max(max(max(n,s),max(e,w)),c));' +
+                 'vec2 k=texture(CA,uv).rg;if(a>0.)k=mix(k,texture(CB,uv).rg,a);k-=.5;' +
+                 'o=vec4(clamp(vec3(y+1.402*k.y,y-.344136*k.x-.714136*k.y,y+1.772*k.x),0.,1.),1.);}';
+    const FS_U = HEAD + 'uniform sampler2D S;void main(){' +
+                 'vec2 ts=vec2(textureSize(S,0)),p=uv*ts,t1=floor(p-.5)+.5,f=p-t1;' +
+                 'vec2 w0=f*(-.5+f*(1.-.5*f)),w1=1.+f*f*(-2.5+1.5*f),w2=f*(.5+f*(2.-1.5*f)),w3=f*f*(-.5+.5*f);' +
+                 'vec2 w12=w1+w2,o12=w2/w12,c0=(t1-1.)/ts,c3=(t1+2.)/ts,c12=(t1+o12)/ts;vec3 r=vec3(0);' +
+                 'r+=texture(S,vec2(c0.x,c0.y)).rgb*w0.x*w0.y;r+=texture(S,vec2(c12.x,c0.y)).rgb*w12.x*w0.y;r+=texture(S,vec2(c3.x,c0.y)).rgb*w3.x*w0.y;' +
+                 'r+=texture(S,vec2(c0.x,c12.y)).rgb*w0.x*w12.y;r+=texture(S,vec2(c12.x,c12.y)).rgb*w12.x*w12.y;r+=texture(S,vec2(c3.x,c12.y)).rgb*w3.x*w12.y;' +
+                 'r+=texture(S,vec2(c0.x,c3.y)).rgb*w0.x*w3.y;r+=texture(S,vec2(c12.x,c3.y)).rgb*w12.x*w3.y;r+=texture(S,vec2(c3.x,c3.y)).rgb*w3.x*w3.y;' +
+                 'o=vec4(clamp(r,0.,1.),1.);}';
     const pY = program(FS_Y), pC = program(FS_C), pD = program(FS_D);
-    if (!pY || !pC || !pD) return fail(true);
+    const pB = P && program(FS_B), pU = P && program(FS_U);
+    if (!pY || !pC || !pD || (P && (!pB || !pU))) return fail(true);
     function setup(p, flip, names) {
       gl.useProgram(p);
       gl.uniform1f(gl.getUniformLocation(p, 'flip'), flip);
@@ -571,6 +598,13 @@
     // nei passaggi verso una texture la riga 0 resta la riga 0; verso lo schermo si capovolge
     setup(pY, 1, ['S']); setup(pC, 1, ['S']); setup(pD, -1, ['YA', 'CA', 'YB', 'CB']);
     const uA = gl.getUniformLocation(pD, 'a');
+    let uBA = null;
+    if (P) {
+      setup(pB, 1, ['YA', 'CA', 'YB', 'CB']);
+      gl.uniform1f(gl.getUniformLocation(pB, 'sharp'), P.sharp);
+      uBA = gl.getUniformLocation(pB, 'a');
+      setup(pU, -1, ['S']);
+    }
     gl.bindVertexArray(gl.createVertexArray());
     gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
     gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
@@ -588,14 +622,14 @@
       return t;
     }
     const rgbTex = tex(gl.RGBA8, W, H);   // d'appoggio, una sola
+    const mid = P ? tex(gl.RGBA8, W, H) : null;   // telefono: il fotogramma prima dell'ingrandimento
     const texture = () => spare.length ? spare.pop() : { y: tex(gl.R8, W, H), c: tex(gl.RG8, W2, H2) };
     const drop = s => { gl.deleteTexture(s.y); gl.deleteTexture(s.c); };
 
-    // Il fotogramma decodificato entra nella texture d'appoggio e da lì nel suo posto.
-    function store(fr, s) {
+    function store(bm, s) {
       gl.activeTexture(gl.TEXTURE0);
       gl.bindTexture(gl.TEXTURE_2D, rgbTex);
-      gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, gl.RGBA, gl.UNSIGNED_BYTE, fr);
+      gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, gl.RGBA, gl.UNSIGNED_BYTE, bm);
       gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
       gl.useProgram(pY);
       gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, s.y, 0);
@@ -606,17 +640,16 @@
       gl.viewport(0, 0, W2, H2);
       gl.drawArrays(gl.TRIANGLES, 0, 3);
       gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-      // i comandi partono subito: il fotogramma del decoder torna libero prima
-      gl.flush();
     }
 
-    /* Se a metà strada qualcosa cede (contesto WebGL perso, decoder che non
-       riparte), il motore 2 subentra. Il canvas va sostituito: uno che ha
-       già un contesto WebGL non può dare un contesto 2D. */
+    /* Se qualcosa cede (contesto WebGL perso, immagini che non arrivano), il
+       motore 2 subentra. Il canvas va sostituito: uno che ha già un contesto
+       WebGL non può dare un contesto 2D. */
     function fail(early) {
       if (dead) return S;
       dead = true;
-      if (dec && dec.state !== 'closed') { try { dec.close(); } catch (err) {} }
+      if (hasGSAP) gsap.ticker.remove(tick);
+      queue.forEach(b => b.close()); queue.clear();
       try { cache.forEach(drop); spare.forEach(drop); } catch (err) {}
       cache.clear(); spare.length = 0;
       const fresh = canvas.cloneNode(false);
@@ -630,163 +663,118 @@
     }
     canvas.addEventListener('webglcontextlost', e => { e.preventDefault(); fail(); });
 
-    const gopOf = i => (i / G) | 0;
     const clampI = x => Math.min(N - 1, Math.max(0, Math.round(x)));
 
-    /* La finestra di fotogrammi da tenere pronti: come nel motore 2, più
-       spazio davanti che dietro, e la direzione cambia solo dopo un ritorno
-       deciso. */
+    /* La finestra da tenere pronta: più spazio davanti che dietro, e la
+       direzione cambia solo dopo un ritorno deciso. Sul computer la finestra
+       è il filmato intero. */
     function windowOf() {
       const c = clampI(want);
-      const back = Math.max(G, Math.floor(cap * BACK)), ahead = cap - back - 1;
-      const lo = dir >= 0 ? c - back : c - ahead;
-      const hi = dir >= 0 ? c + ahead : c + back;
-      return [Math.max(0, lo), Math.min(N - 1, hi), c];
-    }
-    function around(test) {
-      const [lo, hi, c] = windowOf();
-      for (let d = 0; d <= hi - lo; d++) {
-        for (const i of (d ? [c + d * dir, c - d * dir] : [c])) {
-          if (i >= lo && i <= hi && test(i)) return i;
-        }
-      }
-      return -1;
+      const back = Math.floor(cap * BACK), ahead = cap - back - 1;
+      let lo = dir >= 0 ? c - back : c - ahead;
+      let hi = dir >= 0 ? c + ahead : c + back;
+      // contro i bordi del filmato la finestra non si accorcia: si sposta
+      if (lo < 0) { hi -= lo; lo = 0; }
+      if (hi > N - 1) { lo -= hi - (N - 1); hi = N - 1; }
+      return [Math.max(0, lo), hi, c];
     }
 
-    // --- download: il gruppo sotto gli occhi, l'ultimo (serve al raccordo
-    //     con la pagina), poi la finestra per urgenza, poi tutto il resto
+    /* Urgenza di un fotogramma: la distanza, contata doppia alle spalle, divisa
+       per la sua "grana" — 8 per uno ogni otto, 4, 2, 1. Così la finestra si
+       riempie prima rada e uniforme, poi sempre più fitta, e il fotogramma
+       sotto gli occhi viene comunque per primo. */
+    const grain = i => i % 8 === 0 ? 8 : i % 4 === 0 ? 4 : i % 2 === 0 ? 2 : 1;
+    function best(test) {
+      const [lo, hi, c] = windowOf();
+      let b = -1, bs = Infinity;
+      for (let i = lo; i <= hi; i++) {
+        if (!test(i)) continue;
+        const d = (i - c) * dir;
+        const s = (d >= 0 ? d : 1 - 2 * d) / grain(i);
+        if (s < bs) { bs = s; b = i; }
+      }
+      return b;
+    }
+
+    // --- download: il primo, l'ultimo (serve al raccordo con la pagina),
+    //     la finestra per urgenza, poi tutto il resto in ordine
     function nextFetch() {
-      const free = g => g >= 0 && g < nG && !bins[g] && !fetching.has(g) && tries[g] < 3;
-      const g0 = gopOf(clampI(want));
-      if (free(g0)) return g0;
-      if (free(nG - 1)) return nG - 1;
-      const i = around(i => free(gopOf(i)));
-      if (i >= 0) return gopOf(i);
-      for (let g = 0; g < nG; g++) if (free(g)) return g;
+      const free = i => !src[i] && !fetching.has(i) && tries[i] < 3;
+      for (const i of [0, N - 1]) if (free(i)) return i;
+      const i = best(free);
+      if (i >= 0) return i;
+      for (let k = 0; k < N; k++) if (free(k)) return k;
       return -1;
     }
-    function load(g) {
-      fetching.add(g);
-      tries[g]++;
-      fetch(url('/' + String(g).padStart(2, '0') + '.bin'))
-        .then(r => { if (!r.ok) throw new Error('http ' + r.status); return r.arrayBuffer(); })
+    function load(i) {
+      fetching.add(i);
+      tries[i]++;
+      fetch(urlOf(i))
+        .then(r => { if (!r.ok) throw new Error('http ' + r.status); return r.blob(); })
         .then(b => {
-          fetching.delete(g);
+          fetching.delete(i);
           if (dead) return;
-          bins[g] = new Uint8Array(b);
+          src[i] = b; nSrc++;
           pump();
         }, () => {
-          fetching.delete(g);
+          fetching.delete(i);
           if (dead) return;
-          if (tries[g] >= 3) fail(); else pump();
+          if (tries[i] >= 3) fail(); else pump();
         });
     }
 
-    // --- decodifica: un gruppo alla volta, il più urgente
-    function decoder() {
-      if (dec && dec.state === 'configured') return dec;
-      const d = new VideoDecoder({ output: onFrame, error: () => {
-        /* Chrome può riprendersi il decoder di una pagina rimasta inattiva:
-           se ne crea un altro. Solo errori a raffica fanno cedere il motore. */
-        if (dec === d) { dec = null; inflight.clear(); }
-        if (++errors > 4) fail(); else setTimeout(pump, 50);
-      } });
-      d.configure(idx.config);
-      return (dec = d);
-    }
-    /* Cosa decodificare, in quest'ordine:
-         1. i fotogrammi completi (uno per gruppo, il primo) del gruppo sotto
-            gli occhi e di quelli davanti: decodificarne uno costa un ottavo
-            di un gruppo intero, e in pochi millesimi la finestra ha un
-            fotogramma nitido ogni otto. In un colpo deciso è su quelli che
-            l'immagine scorre — nitida, in dissolvenza — invece di fermarsi
-            ad aspettare un gruppo intero che arriverebbe già superato;
-         2. i gruppi interi, per urgenza: il fotogramma sotto gli occhi,
-            poi allargandosi, prima nella direzione di marcia.
-       Nello scroll normale tutto questo è già pronto molto prima di
-       servire. Un lavoro è un numero: g per il gruppo intero, -(g+1) per il
-       solo fotogramma completo del gruppo g. */
-    function nextDecode() {
-      const [lo, hi, c] = windowOf();
-      const ok = g => !!bins[g] && !inflight.has(g);
-      for (let g = gopOf(c); g >= 0 && g < nG; g += dir) {
-        const k = g * G;
-        if (k < lo || k > hi) { if (dir > 0 ? k > hi : k + G - 1 < lo) break; continue; }
-        if (!cache.has(k) && ok(g) && !inflight.has(-(g + 1))) return -(g + 1);
-      }
-      const i = around(i => !cache.has(i) && ok(gopOf(i)));
-      if (i >= 0) return gopOf(i);
-      // fuori finestra ma senza nulla da fare: il gruppo d'arrivo, se manca
-      const last = N - 1;
-      if (!cache.has(last) && cache.size < cap && ok(gopOf(last))) return gopOf(last);
-      return null;
-    }
-    /* Due gruppi in coda al decoder, non uno: mentre si copia l'ultimo
-       fotogramma di un gruppo il decoder sta già lavorando al successivo.
-       Ogni gruppo comincia con un fotogramma completo, quindi si possono
-       accodare in qualunque ordine. Il decoder trattiene gli ultimi
-       fotogrammi finché non riceve altro: quando non c'è altro da accodare,
-       flush() li fa uscire. */
-    const inflight = new Map();          // lavoro → ultimo fotogramma atteso
-    let flushing = false;
-    function decodeGop(job) {
-      const d = decoder();
-      const g = job < 0 ? -job - 1 : job;
-      const bin = bins[g];
-      const from = g * G, to = job < 0 ? from + 1 : Math.min(N, from + G);
-      inflight.set(job, to - 1);
-      let o = 0;
-      for (let i = from; i < to; i++) {
-        const n = idx.sizes[i];
-        d.decode(new EncodedVideoChunk({ type: i === from ? 'key' : 'delta', timestamp: i, data: bin.subarray(o, o + n) }));
-        o += n;
-      }
-    }
-    function drain() {
-      const d = dec;
-      if (!d || flushing) return;
-      flushing = true;
-      d.flush().then(() => {
-        flushing = false;
-        if (dec === d) inflight.clear();
+    // --- decodifica: nei thread di sfondo del browser, più alla volta
+    const pending = i => cache.has(i) || queue.has(i) || decoding.has(i);
+    function decode(i) {
+      decoding.add(i);
+      createImageBitmap(src[i]).then(bm => {
+        decoding.delete(i);
+        if (dead) { bm.close(); return; }
+        decoded++;
+        queue.set(i, bm);
         pump();
-      }, () => { flushing = false; /* decoder chiuso o resettato: ci pensa l'errore */ });
+      }, () => {
+        decoding.delete(i);
+        src[i] = null; nSrc--;      // illeggibile: la si scarica di nuovo
+        pump();
+      });
     }
 
-    /* Un fotogramma decodificato: lo si copia in una texture, se serve, e lo
-       si restituisce subito al decoder (ne ha pochi: tenerli bloccherebbe la
-       decodifica). */
-    function onFrame(fr) {
-      const i = Math.round(fr.timestamp);
-      decoded++;
-      try {
-        if (dead || cache.has(i)) return;
-        // la finestra allargata ai confini dei gruppi: un gruppo decodificato
-        // si tiene intero, invece di doverlo ridecodificare per i suoi bordi
+    /* --- la copia sulla GPU --------------------------------------------------
+       È l'unico lavoro fatto sul thread della pagina, quindi è dosato: a ogni
+       fotogramma dello schermo se ne copia uno, il più urgente; a pagina
+       ferma, finché restano meno di 4 ms del giro. */
+    let lastMove = 0;
+    function tick() {
+      if (dead || !queue.size) return;
+      const t0 = performance.now(), still = t0 - lastMove > 150;
+      do {
+        const i = bestQueued();
+        const bm = queue.get(i);
+        queue.delete(i);
         const [lo, hi] = windowOf();
-        const inWin = i >= lo - lo % G && i <= hi - hi % G + G - 1;
-        if (!inWin && !(i === N - 1 && cache.size < cap)) return;
-        const t = slotFor(i);
-        if (!t) return;
-        const t0 = performance.now();
-        store(fr, t);
-        uploadMs += performance.now() - t0;
-        stored++;
-        cache.set(i, t);
-        if (!ready) { ready = true; draw(true); if (S.onUpdate) S.onUpdate(); }
-        // arrivato un fotogramma vicino a quello chiesto: si ridisegna
-        if (Math.abs(i - want) <= MAXGAP + 1) draw();
-      } catch (err) {
-        fail();
-      } finally {
-        fr.close();
-        // ultimo fotogramma di un gruppo: c'è posto per accodarne un altro
-        const g = gopOf(i);
-        let freed = false;
-        if (inflight.get(g) === i) { inflight.delete(g); freed = true; }
-        if (inflight.get(-(g + 1)) === i) { inflight.delete(-(g + 1)); freed = true; }
-        if (freed) pump();
+        const s = (i >= lo && i <= hi) ? slotFor(i) : null;
+        if (s) {
+          const a = performance.now();
+          try { store(bm, s); } catch (err) { bm.close(); fail(); return; }
+          uploadMs += performance.now() - a;
+          stored++;
+          cache.set(i, s);
+          if (!ready) { ready = true; draw(true); if (S.onUpdate) S.onUpdate(); }
+          else if (Math.abs(i - want) <= MAXGAP + 1) draw();
+        }
+        bm.close();
+      } while (still && queue.size && performance.now() - t0 < 4);
+      pump();
+    }
+    function bestQueued() {
+      const c = want;
+      let b = -1, bs = Infinity;
+      for (const i of queue.keys()) {
+        const d = (i - c) * dir, s = (d >= 0 ? d : 1 - 2 * d) / grain(i);
+        if (s < bs) { bs = s; b = i; }
       }
+      return b;
     }
 
     /* Una texture per il fotogramma i: una libera, o quella del fotogramma
@@ -796,8 +784,7 @@
       const [lo, hi] = windowOf();
       let far = -1, fd = -1;
       for (const k of cache.keys()) {
-        const out = k < lo || k > hi;
-        const d = (out ? 1e6 : 0) + Math.abs(k - want);
+        const d = (k < lo || k > hi ? 1e6 : 0) + Math.abs(k - want);
         if (d > fd) { fd = d; far = k; }
       }
       if (far < 0 || (fd < 1e6 && Math.abs(i - want) >= fd)) return null;
@@ -807,17 +794,18 @@
     }
 
     function pump() {
-      if (dead || !idx) return;
-      for (let g; fetching.size < FETCH && (g = nextFetch()) >= 0;) load(g);
-      if (flushing) return;
-      for (let j; inflight.size < 3 && (j = nextDecode()) !== null;) decodeGop(j);
-      if (inflight.size && nextDecode() === null) drain();
+      if (dead) return;
+      for (let i; fetching.size < FETCH && (i = nextFetch()) >= 0;) load(i);
+      while (decoding.size < DECODE && queue.size + decoding.size < QUEUE + DECODE) {
+        const i = best(k => src[k] && !pending(k));
+        if (i < 0) break;
+        decode(i);
+      }
     }
 
     /* --- il disegno ---------------------------------------------------------
        Il punto chiesto sta fra due fotogrammi: si dissolvono, pesati sulla
-       posizione esatta. Se uno dei due non è ancora pronto (succede solo nei
-       colpi più violenti, o finché il download non è finito) si dissolvono i
+       posizione esatta. Se uno dei due non è ancora pronto si dissolvono i
        due più vicini che lo sono, uno per parte: l'immagine resta nitida e
        continua, solo con meno fotogrammi intermedi per un istante. */
     function near(from, step) {
@@ -832,13 +820,13 @@
       if (ia < 0 && ib < 0) {
         // nulla di pronto lì vicino: il più vicino che c'è, senza dissolvenza
         held++;
-        let best = -1;
-        for (const k of cache.keys()) if (best < 0 || Math.abs(k - w) < Math.abs(best - w)) best = k;
-        if (best < 0) return;
-        ia = best;
+        let b = -1;
+        for (const k of cache.keys()) if (b < 0 || Math.abs(k - w) < Math.abs(b - w)) b = k;
+        if (b < 0) return;
+        ia = b;
       }
       if (ia < 0) ia = ib;
-      else if (ib >= 0 && ib !== ia) a = Math.round((w - ia) / (ib - ia) * 64) / 64;
+      else if (ib >= 0 && ib !== ia) a = Math.round((w - ia) / (ib - ia) * 128) / 128;
       if (a >= 1) { ia = ib; a = 0; }
       if (a <= 0) a = 0;
       draws++;
@@ -846,32 +834,31 @@
       if (k === lastDrawn && !force) return;
       lastDrawn = k;
       const A = cache.get(ia), B = a ? cache.get(ib) : A;
-      gl.useProgram(pD);
       [A.y, A.c, B.y, B.c].forEach((t, u) => { gl.activeTexture(gl.TEXTURE0 + u); gl.bindTexture(gl.TEXTURE_2D, t); });
       gl.activeTexture(gl.TEXTURE0);
+      if (P) {
+        gl.useProgram(pB);
+        gl.uniform1f(uBA, a);
+        gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
+        gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, mid, 0);
+        gl.viewport(0, 0, W, H);
+        gl.drawArrays(gl.TRIANGLES, 0, 3);
+        gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+        gl.useProgram(pU);
+        gl.bindTexture(gl.TEXTURE_2D, mid);
+        gl.viewport(0, 0, OW, OH);
+        gl.drawArrays(gl.TRIANGLES, 0, 3);
+        return;
+      }
+      gl.useProgram(pD);
       gl.uniform1f(uA, a);
       gl.viewport(0, 0, W, H);
       gl.drawArrays(gl.TRIANGLES, 0, 3);
     }
 
-    // --- avvio: indice, verifica del decoder, primo gruppo
-    const b64 = s => Uint8Array.from(atob(s), c => c.charCodeAt(0));
-    fetch(url('.json'))
-      .then(r => { if (!r.ok) throw new Error('http ' + r.status); return r.json(); })
-      .then(j => {
-        if (dead) return;
-        if (j.n !== N || j.w !== W || j.h !== H) throw new Error('indice');
-        const config = { codec: j.codec, description: b64(j.desc), codedWidth: j.w, codedHeight: j.h,
-                         optimizeForLatency: true };
-        return VideoDecoder.isConfigSupported(config).then(s => {
-          if (!s.supported) throw new Error('codec');
-          idx = { config, sizes: j.sizes };
-          G = j.g; nG = Math.ceil(N / G);
-          for (let g = 0; g < nG; g++) { bins[g] = null; tries[g] = 0; }
-          pump();
-        });
-      })
-      .catch(() => fail());
+    if (hasGSAP) gsap.ticker.add(tick);
+    else setInterval(tick, 16);
+    pump();   // si parte subito: il preloader copre i primi istanti
 
     S.ready = () => ready;
     S.show = q => {
@@ -881,22 +868,28 @@
         turn += Math.abs(dw);
         if (turn > 1.5) { dir = -dir; turn = 0; }
       } else if (dw) turn = 0;
+      if (dw) lastMove = performance.now();
       want = w;
       draw();
       pump();
     };
+    /* A intro finita le texture si liberano, tranne gli ultimi fotogrammi:
+       quelli su cui si rientra risalendo dal sito. Sul computer, dove il
+       filmato sta tutto in memoria, si tiene tutto: rientrare dev'essere
+       identico alla prima volta. */
     S.release = () => {
+      if (cap >= N) return;
       for (const k of [...cache.keys()]) {
         if (k < N - KEEP) { drop(cache.get(k)); cache.delete(k); }
       }
       spare.forEach(drop); spare.length = 0;
     };
-    S.debug = () => ({ want, dir, cap, G, set: SET, keys: [...cache.keys()].sort((a, b) => a - b),
-                       window: windowOf(), inflight: [...inflight.keys()], bins: bins.filter(Boolean).length + '/' + nG, decoded, uploadMs });
+    S.debug = () => ({ want, dir, cap, set: SET, keys: [...cache.keys()].sort((a, b) => a - b),
+                       window: windowOf(), queue: [...queue.keys()], decoding: [...decoding], decoded, stored, uploadMs });
     S.stats = () =>
-      cache.size + '/' + cap + ' @' + W + ' h264 · gruppi ' + bins.filter(Boolean).length + '/' + nG +
+      cache.size + '/' + cap + ' @' + W + ' gpu · scaricati ' + nSrc + '/' + N +
       ' · ' + (lastDrawn || '-') + ' · trattenuti ' + held + ' su ' + draws +
-      ' · decodificati ' + decoded + ', copiati ' + stored + ' (' + (stored ? (uploadMs / stored).toFixed(1) : '-') + ' ms)';
+      ' · copiati ' + stored + ' (' + (stored ? (uploadMs / stored).toFixed(1) : '-') + ' ms)';
     return S;
   }
 
