@@ -246,13 +246,27 @@
          moltiplicate per 2/3. */
       screenCX: 639.5,
       screenHW: 166,
-      icon:    [518.0, 121.0],  // centro dell'icona del brandmark nel filmato
-      // le ancore del testo restano documentate ma non guidano più il quadro
-      titleTL: [ 500.0, 216.0],
-      titleBR: [ 683.0, 396.0],
-      ruleL:   [ 499.0, 464.0],
-      ruleR:   [ 780.0, 464.0],
-      mark:    [ 509.0,  58.5],
+      /* Come per il laptop: il filmato diviso in fotogrammi, con uno
+         screenshot VERO del sito (672×1280) proiettato sullo schermo del
+         telefono in ogni fotogramma, seguendone la prospettiva tracciata sul
+         render originale. In verticale il telefono vede solo la striscia
+         centrale del filmato (object-fit:cover ne taglia i lati), quindi i
+         fotogrammi contengono solo quella — x 424…856, 432 pixel di filmato
+         — a risoluzione doppia: 864×1440, più una serie leggera 288×480 di
+         riserva. Lo screenshot è largo quanto il display che lo zoom finale
+         porta a tutto schermo (332px attorno a screenCX, centrato in
+         verticale): lì è alla sua risoluzione piena, non ingrandito da un
+         video a 720p. */
+      frames:  { base: 'assets/frames/phone/', count: 213, sizes: [864], low: 288,
+                 crop: { x: 424, w: 432 }, v: FRAMES_V },
+      // ancore misurate sullo screenshot e portate nei pixel del filmato
+      icon:    [510.8, 126.8],  // centro dell'icona del brandmark nel filmato
+      ruleL:   [488.8, 500.3],  // estremi del filetto sopra il sottotitolo
+      ruleR:   [790.2, 500.3],
+      mark:    [500.7,  79.4],
+      // non guidano più il quadro: restano per chi legge
+      titleTL: [ 488.8, 190.0],
+      titleBR: [ 790.2, 450.0],
       topBand: 96,
       vEnd:    0.97            // qui il nuovo filmato si è già fermato
     }
@@ -324,26 +338,25 @@
      la stessa interfaccia (show / ready / kind), vedi frameSource e
      videoSource qui sotto.
 
-     Il desktop usa il filmato diviso in fotogrammi. Il <video> resta per il
-     telefono — dove il filmato è a 720p, lo scrubbing è sempre stato fluido e
-     la memoria è poca — e come riserva automatica ovunque la sequenza di
-     immagini non possa partire o non arrivi. */
+     Desktop e telefono usano entrambi il filmato diviso in fotogrammi, ognuno
+     la sua serie. Il <video> resta come riserva automatica ovunque la
+     sequenza di immagini non possa partire o non arrivi, e per i tablet. */
   const canFrames = typeof createImageBitmap === 'function' &&
-                    // solo con mouse o trackpad, cioè su un computer: un
-                    // tablet usa anche lui il filmato del laptop, ma ha meno
-                    // memoria per la finestra di fotogrammi, e lì il <video>
-                    // ha sempre funzionato
-                    matchMedia('(pointer: fine)').matches &&
+                    // il filmato del laptop a fotogrammi solo con mouse o
+                    // trackpad, cioè su un computer: un tablet usa anche lui
+                    // quel filmato, ma ha meno memoria per la finestra di
+                    // fotogrammi, e lì il <video> ha sempre funzionato
+                    (ref.layout === 'telefono' || matchMedia('(pointer: fine)').matches) &&
                     // ?motore=video forza il motore di riserva: serve a
-                    // confrontare i due sullo stesso computer
+                    // confrontare i due sullo stesso dispositivo
                     !/[?&]motore=video(&|$)/.test(location.search);
   let film = null;
 
   if (introOn) {
     document.documentElement.classList.add('has-intro');
     // Il file scelto qui, e non con più <source>: così il telefono scarica
-    // solo il filmato del telefono e il desktop solo i suoi fotogrammi.
-    film = (ref.layout === 'laptop' && ref.frames && canFrames) ? frameSource() : videoSource();
+    // solo i fotogrammi del telefono e il desktop solo i suoi.
+    film = (ref.frames && canFrames) ? frameSource() : videoSource();
   }
 
   /* Sblocco del buffer — è questo il punto in cui iOS si comporta come nessun
@@ -472,7 +485,8 @@
        sono pronti attorno alla posizione. Dove il browser dice quanta RAM
        c'è (Chrome, Edge) se ne prende di più sui computer che ne hanno. */
     const MB = 1024 * 1024, ram = navigator.deviceMemory || 0;
-    const BUDGET = ram >= 8 ? 300 * MB : ram ? 150 * MB : 220 * MB;
+    // sul telefono la memoria è poca e Safari non dice quanta: finestra più corta
+    const BUDGET = F.crop ? 110 * MB : ram >= 8 ? 300 * MB : ram ? 150 * MB : 220 * MB;
     const FETCH  = 6;                   // download in parallelo
     /* Decodifiche in parallelo. Misurato: decodificare un WebP 1920×1080
        costa decine di millisecondi su un solo core, ma il browser le
@@ -496,9 +510,22 @@
        disegna nel canvas e quando stende il canvas sullo schermo. */
     const s0   = Math.max(innerWidth / ref.fw, innerHeight / ref.fh) || 1;
     const need = ref.fw * s0 * (devicePixelRatio || 1);
-    const SET  = need > F.sizes[0] * 1.1 ? F.sizes[1] : F.sizes[0];
-    const W = SET, H = Math.round(W * ref.fh / ref.fw);
-    canvas.width = W; canvas.height = H;
+    const SET  = F.sizes.length < 2 || need <= F.sizes[0] * 1.1 ? F.sizes[0] : F.sizes[1];
+
+    /* Il telefono vede solo la striscia centrale del filmato: in verticale
+       object-fit:cover ne taglia i lati, e di 1280 pixel ne resta a vista
+       un terzo. I suoi fotogrammi (F.crop) contengono quindi solo quella
+       striscia, a risoluzione doppia — è lì che lo screenshot dello schermo
+       deve essere nitido. Il canvas però resta grande quanto il filmato
+       intero, con la striscia disegnata al suo posto: così object-fit:cover
+       lo stende esattamente come stendeva il video, e ogni misura del
+       raccordo resta valida. Sul desktop immagine e canvas coincidono. */
+    const W = SET, H = F.crop ? Math.round(W * ref.fh / F.crop.w) : Math.round(W * ref.fh / ref.fw);
+    const px = F.crop ? W / F.crop.w : 1;         // pixel d'immagine per pixel di filmato
+    const CW = F.crop ? Math.round(ref.fw * px) : W, CH = F.crop ? Math.round(ref.fh * px) : H;
+    const DX = F.crop ? Math.round(F.crop.x * px) : 0;
+    canvas.width = CW; canvas.height = CH;
+    if (F.crop) { ctx.fillStyle = '#07070a'; ctx.fillRect(0, 0, CW, CH); }
     const cap = Math.max(8, Math.min(64, Math.floor(BUDGET / (W * H * 4))));
     const urlOf = (set, i) => F.base + set + '/' + String(i).padStart(3, '0') + '.webp?v=' + F.v;
 
@@ -702,10 +729,10 @@
       lastDrawn = k;
       try {
         ctx.globalAlpha = 1;
-        ctx.drawImage(A, 0, 0, W, H);
+        ctx.drawImage(A, DX, 0, W, H);
         if (a > 0) {
           ctx.globalAlpha = a;
-          ctx.drawImage(B, 0, 0, W, H);
+          ctx.drawImage(B, DX, 0, W, H);
         }
       } catch (err) { lastDrawn = ''; /* immagine non disegnabile: si salta */ }
       ctx.globalAlpha = 1;
