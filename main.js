@@ -579,7 +579,7 @@
        perché è dove si sta andando, ma alle spalle ce n'è abbastanza per
        tornare indietro senza aspettare. */
     function windowOf() {
-      const c = Math.min(N - 1, Math.max(0, Math.round(want)));
+      const c = Math.min(N - 1, Math.max(0, Math.round(shown)));
       const back = Math.max(3, Math.floor(cap * BACK)), ahead = cap - back - 1;
       const lo = dir >= 0 ? c - back : c - ahead;
       const hi = dir >= 0 ? c + ahead : c + back;
@@ -608,7 +608,7 @@
     function nextFetch() {
       const freeH = i => !Hd.src[i] && !fetching.has('h' + i) && Hd.tries[i] < 3;
       const freeL = i => !L.src[i] && !fetching.has('l' + i) && L.tries[i] < 3;
-      const c = Math.min(N - 1, Math.max(0, Math.round(want)));
+      const c = Math.min(N - 1, Math.max(0, Math.round(shown)));
       for (const i of [c, Math.min(N - 1, c + 1)]) if (freeH(i)) return ['h', i];
       for (let k = 0; k < N; k++) if (freeL(k)) return ['l', k];
       const i = around(freeH);
@@ -685,8 +685,8 @@
           trim();
         }
         if (!ready && (cache.has(0) || L.bmp[0])) { ready = true; if (S.onUpdate) S.onUpdate(); }
-        const i0 = Math.floor(want);
-        if (i === i0 || i === i0 + 1 || !lastDrawn) draw();
+        if (!lastDrawn) draw();   // il resto lo fa tick(), che ora può avanzare
+        wake();
         pump();
       }, () => {
         // immagine illeggibile: la si scarica di nuovo
@@ -705,7 +705,7 @@
         if (k < lo || k > hi) { release(cache.get(k)); cache.delete(k); }
       }
       if (cache.size <= cap) return;
-      const keys = [...cache.keys()].sort((a, b) => Math.abs(b - want) - Math.abs(a - want));
+      const keys = [...cache.keys()].sort((a, b) => Math.abs(b - shown) - Math.abs(a - shown));
       for (const k of keys) {
         if (cache.size <= cap) break;
         release(cache.get(k)); cache.delete(k);
@@ -721,8 +721,8 @@
     const pick = i => cache.get(i) || L.bmp[i] || null;
     function draw() {
       if (dead) return;
-      const i0 = Math.min(N - 1, Math.floor(want)), i1 = Math.min(N - 1, i0 + 1);
-      let a = BLEND ? Math.round((want - i0) * 48) / 48 : (want - i0 < 0.5 ? 0 : 1);
+      const i0 = Math.min(N - 1, Math.floor(shown)), i1 = Math.min(N - 1, i0 + 1);
+      let a = BLEND ? Math.round((shown - i0) * 64) / 64 : (shown - i0 < 0.5 ? 0 : 1);
       if (a >= 1) a = 1;
       let A = pick(i0), B = pick(i1), ia = i0, ib = i1;
       draws++;
@@ -757,6 +757,47 @@
       ctx.globalAlpha = 1;
     }
 
+    /* --- mai un fotogramma che non sia nitido ------------------------------
+       `want` è il punto del filmato chiesto dallo scroll, `shown` quello che
+       si vede. Prima coincidevano: se lo scroll correva più veloce della
+       decodifica, al posto del nitido si disegnava la serie leggera (lo
+       "sgranato") e, all'arrivo del nitido, l'immagine cambiava di colpo (lo
+       "scatto"). Ora `shown` insegue `want` solo fin dove i fotogrammi
+       nitidi sono già pronti, uno dopo l'altro senza buchi, e ci arriva con
+       un'inerzia di una trentina di millisecondi che leviga anche i passi
+       della decodifica. Nello scroll normale i due coincidono; in un colpo
+       molto deciso l'immagine resta un istante dietro al dito e recupera in
+       modo continuo, sempre nitida. La serie leggera torna utile solo per i
+       salti enormi (un link che riporta in cima): lì si salta. */
+    const JUMP = 24;                    // oltre questa distanza si salta
+    const FOLLOW = 30;                  // rapidità dell'inseguimento (1/s)
+    let shown = 0, ticking = false;
+    function reach(from, to) {
+      if (to >= from) {
+        let i = Math.floor(from);
+        if (!cache.has(i)) return from;
+        while (i < Math.ceil(to) && cache.has(i + 1)) i++;
+        return Math.min(to, i);
+      }
+      let i = Math.ceil(from);
+      if (!cache.has(i)) return from;
+      while (i > Math.floor(to) && cache.has(i - 1)) i--;
+      return Math.max(to, i);
+    }
+    function tick(time, dt) {
+      if (dead) { stop(); return; }
+      const far = Math.abs(want - shown) > JUMP;
+      const tgt = far ? want : reach(shown, want);
+      shown += (tgt - shown) * (1 - Math.exp(-FOLLOW * Math.min(dt, 64) / 1000));
+      if (Math.abs(tgt - shown) < 0.003) shown = tgt;
+      draw();
+      pump();
+      // fermo e arrivato: il ticker si spegne, nessun costo a riposo
+      if (shown === want) stop();
+    }
+    function wake() { if (!ticking && hasGSAP && shown !== want) { ticking = true; gsap.ticker.add(tick); } }
+    function stop() { if (ticking) { ticking = false; gsap.ticker.remove(tick); } }
+
     pump();   // si parte subito: il preloader copre i primi istanti di download
 
     S.ready = () => ready;
@@ -772,7 +813,8 @@
         if (turn > 1.5) { dir = -dir; turn = 0; }
       } else if (dw) turn = 0;
       want = w;
-      draw();
+      if (!hasGSAP) shown = want;      // senza ticker: comportamento di prima
+      wake();
       pump();
     };
     /* A intro finita i nitidi in memoria si liberano — tranne gli ultimi,
@@ -786,7 +828,7 @@
       lastDrawn = '';
     };
     // per il pannello ?diag=1
-    S.debug = () => ({ want, dir, cap, low: nLow, hd: nHd, decoding: [...decoding], fetching: [...fetching],
+    S.debug = () => ({ want, shown, dir, cap, low: nLow, hd: nHd, decoding: [...decoding], fetching: [...fetching],
                        window: windowOf(), keys: [...cache.keys()].sort((a, b) => a - b),
                        lowReady: L.bmp.filter(Boolean).length });
     S.stats = () =>
