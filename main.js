@@ -139,7 +139,7 @@
      nomi, questo numero va cambiato. Vanno rigenerati anche quando cambia
      intro-desktop.mp4: sono lo stesso filmato, fotogramma per fotogramma,
      e le misure qui sotto valgono per entrambi. */
-  const FRAMES_V = '20261008a';
+  const FRAMES_V = '20261009b';
 
   const REF = {
     laptop: {
