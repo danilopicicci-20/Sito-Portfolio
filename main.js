@@ -139,7 +139,7 @@
      nomi, questo numero va cambiato. Vanno rigenerati anche quando cambia
      intro-desktop.mp4: sono lo stesso filmato, fotogramma per fotogramma,
      e le misure qui sotto valgono per entrambi. */
-  const FRAMES_V = '20261009b';
+  const FRAMES_V = '20261010a';
 
   const REF = {
     laptop: {
@@ -252,13 +252,27 @@
          render originale. In verticale il telefono vede solo la striscia
          centrale del filmato (object-fit:cover ne taglia i lati), quindi i
          fotogrammi contengono solo quella — x 424…856, 432 pixel di filmato
-         — a risoluzione doppia: 864×1440, più una serie leggera 288×480 di
-         riserva. Lo screenshot è largo quanto il display che lo zoom finale
-         porta a tutto schermo (332px attorno a screenCX, centrato in
-         verticale): lì è alla sua risoluzione piena, non ingrandito da un
-         video a 720p. */
-      frames:  { base: 'assets/frames/phone/', count: 213, sizes: [864], low: 288,
+         — a risoluzione TRIPLA: 1296×2160, più una serie leggera 216×360 di
+         riserva. Il render esiste solo a 720p: per arrivare al triplo lo
+         sfondo è ingrandito con un filtro bicubico più una nitidezza
+         adattiva limitata ai pixel vicini (niente aloni), mentre lo
+         screenshot è proiettato direttamente a quella risoluzione. Nei primi
+         fotogrammi la scritta "FLUIDS STUDIO" incisa nel render è stata
+         tolta e il fondo ricostruito: al suo posto c'è il testo vero (wm). */
+      frames:  { base: 'assets/frames/phone/', count: 213, sizes: [1296], low: 216,
                  crop: { x: 424, w: 432 }, v: FRAMES_V },
+      /* Il wordmark d'apertura del telefono, come quello del laptop: misurato
+         sull'inchiostro del fotogramma 0 (FLUIDS 585→696, maiuscole 182→197;
+         STUDIO 603→677, 205→215). La scritta incisa nei fotogrammi non c'è
+         più, quindi niente toppa (patch vuota): il testo vero si spegne da
+         solo nei primi passi della corsa. */
+      wm: {
+        a:     { text: 'FLUIDS', left: 585, width: 112, capTop: 182.3, capHeight: 15.4 },
+        b:     { text: 'STUDIO', left: 603, width: 75,  capTop: 205.6, capHeight: 9.4 },
+        patch: [0, 0, 0, 0],
+        fadeA:  0.006, fadeB:  0.05,
+        patchA: 0, patchB: 0.001
+      },
       // ancore misurate sullo screenshot e portate nei pixel del filmato
       icon:    [510.8, 126.8],  // centro dell'icona del brandmark nel filmato
       ruleL:   [488.8, 500.3],  // estremi del filetto sopra il sottotitolo
@@ -486,7 +500,11 @@
        c'è (Chrome, Edge) se ne prende di più sui computer che ne hanno. */
     const MB = 1024 * 1024, ram = navigator.deviceMemory || 0;
     // sul telefono la memoria è poca e Safari non dice quanta: finestra più corta
-    const BUDGET = F.crop ? 110 * MB : ram >= 8 ? 300 * MB : ram ? 150 * MB : 220 * MB;
+    // (sul telefono un fotogramma nitido decodificato pesa 11 MB: 240 MB ne tengono 21)
+    const BUDGET = F.crop ? 240 * MB : ram >= 8 ? 300 * MB : ram ? 150 * MB : 220 * MB;
+    // quota della finestra alle spalle: sul telefono, con fotogrammi pesanti e
+    // pochi in memoria, conviene tenerne di più davanti
+    const BACK = F.crop ? 0.25 : 0.4;
     const FETCH  = 6;                   // download in parallelo
     /* Decodifiche in parallelo. Misurato: decodificare un WebP 1920×1080
        costa decine di millisecondi su un solo core, ma il browser le
@@ -515,17 +533,18 @@
     /* Il telefono vede solo la striscia centrale del filmato: in verticale
        object-fit:cover ne taglia i lati, e di 1280 pixel ne resta a vista
        un terzo. I suoi fotogrammi (F.crop) contengono quindi solo quella
-       striscia, a risoluzione doppia — è lì che lo screenshot dello schermo
-       deve essere nitido. Il canvas però resta grande quanto il filmato
-       intero, con la striscia disegnata al suo posto: così object-fit:cover
-       lo stende esattamente come stendeva il video, e ogni misura del
-       raccordo resta valida. Sul desktop immagine e canvas coincidono. */
+       striscia (432 pixel di filmato, proporzioni 0,6).
+       E il canvas è grande quanto la striscia, non quanto il filmato: con
+       object-fit:cover, su qualunque schermo più stretto di 0,6 (cioè ogni
+       telefono in verticale) la striscia viene scalata sull'altezza e
+       centrata — esattamente come veniva scalato e centrato il filmato
+       intero, quindi ogni misura del raccordo resta valida. Prima la
+       striscia stava dentro una tela grande quanto il filmato, e il
+       browser la ingrandiva una volta in più: qui i suoi pixel arrivano
+       sullo schermo senza passaggi intermedi. */
     const W = SET, H = F.crop ? Math.round(W * ref.fh / F.crop.w) : Math.round(W * ref.fh / ref.fw);
-    const px = F.crop ? W / F.crop.w : 1;         // pixel d'immagine per pixel di filmato
-    const CW = F.crop ? Math.round(ref.fw * px) : W, CH = F.crop ? Math.round(ref.fh * px) : H;
-    const DX = F.crop ? Math.round(F.crop.x * px) : 0;
+    const CW = W, CH = H, DX = 0;
     canvas.width = CW; canvas.height = CH;
-    if (F.crop) { ctx.fillStyle = '#07070a'; ctx.fillRect(0, 0, CW, CH); }
     const cap = Math.max(8, Math.min(64, Math.floor(BUDGET / (W * H * 4))));
     const urlOf = (set, i) => F.base + set + '/' + String(i).padStart(3, '0') + '.webp?v=' + F.v;
 
@@ -561,7 +580,7 @@
        tornare indietro senza aspettare. */
     function windowOf() {
       const c = Math.min(N - 1, Math.max(0, Math.round(want)));
-      const back = Math.max(3, Math.floor(cap * 0.4)), ahead = cap - back - 1;
+      const back = Math.max(3, Math.floor(cap * BACK)), ahead = cap - back - 1;
       const lo = dir >= 0 ? c - back : c - ahead;
       const hi = dir >= 0 ? c + ahead : c + back;
       return [Math.max(0, lo), Math.min(N - 1, hi), c];
@@ -1501,7 +1520,9 @@
        Se qualcosa non torna — markup assente, font che non arriva, conto che
        dà un numero assurdo — non si accende niente e si vede il filmato
        esattamente com'era. */
-    const WM    = (ref.layout === 'laptop' && ref.wm) ? ref.wm : null;
+    const WM    = ref.wm || null;
+    // sul telefono la scritta è piccola: l'alone va scalato con lei (vedi CSS)
+    if (WM && ref.layout === 'telefono') intro.classList.add('is-phone');
     const wmEl  = WM ? document.getElementById('introWm') : null;
     const wmA   = wmEl ? document.getElementById('introWmA') : null;
     const wmB   = wmEl ? document.getElementById('introWmB') : null;

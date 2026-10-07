@@ -351,6 +351,16 @@ html.intro-idle .hero__sticky *{ animation-play-state:paused; }
   background-image:linear-gradient(90deg, #39a4d9, var(--accent-2));
   filter:drop-shadow(0 0 12px rgba(0,226,184,.26)) drop-shadow(0 0 34px rgba(0,226,184,.12));
 }
+/* Telefono: stessa scritta, stesso gradiente, stessa luce del laptop. Le
+   misure qui sono in pixel del filmato del telefono, dove le maiuscole sono
+   alte 15 invece di 64: l'alone scala nella stessa proporzione, altrimenti
+   avvolgerebbe la scritta invece di farla brillare. */
+.intro.is-phone #introWmA{
+  filter:drop-shadow(0 0 3.6px rgba(124,92,255,.42)) drop-shadow(0 0 10px rgba(124,92,255,.2));
+}
+.intro.is-phone #introWmB{
+  filter:drop-shadow(0 0 2.8px rgba(0,226,184,.32)) drop-shadow(0 0 8px rgba(0,226,184,.15));
+}
 
 /* Invito allo scroll: senza, davanti a un dispositivo immobile si resta
    fermi. Si dissolve al primo movimento e riappare se si risale fino al
