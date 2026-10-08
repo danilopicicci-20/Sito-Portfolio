@@ -522,14 +522,26 @@
     const KEEP   = 14;                   // texture tenute a intro finita
     const MAXGAP = 12;                   // oltre, due fotogrammi non si dissolvono
 
-    // stessa scelta della serie del motore 2: la più piccola che copre i pixel fisici
+    /* Sul computer i fotogrammi si scaricano SEMPRE dalla serie più alta
+       (2560) e la GPU li riduce a 1920 mentre li mette in memoria. Messi a
+       confronto a pixel pieni, il 2560 ridotto è visibilmente più nitido
+       della serie 1920 — i puntini della sfera, i bordi del testo — perché
+       a 1920 la compressione WebP si era mangiata i dettagli più fini. La
+       memoria resta quella dei 1920; costa solo un po' più di download e
+       di preparazione, tutta a caricamento, nessuna durante lo scroll.
+       Dove lo schermo ha più pixel di 1920 (retina, 1440p, 4K) il canvas è
+       a 2560, e da fermi subentra il fotogramma a piena risoluzione (vedi
+       "il livello nitido" più sotto). */
     const s0   = Math.max(innerWidth / ref.fw, innerHeight / ref.fh) || 1;
     const need = ref.fw * s0 * (devicePixelRatio || 1);
-    const SET  = P ? P.set : F.sizes.length < 2 || need <= F.sizes[0] * 1.1 ? F.sizes[0] : F.sizes[1];
-    const W = SET, H = F.crop ? Math.round(W * ref.fh / F.crop.w) : Math.round(W * ref.fh / ref.fw);
-    const OW = P ? P.out[0] : W, OH = P ? P.out[1] : H;   // misura del canvas
+    const SRC  = P ? P.set : F.sizes[F.sizes.length - 1];   // serie scaricata
+    const W = P ? P.set : F.sizes[0];                         // misura in memoria
+    const H = F.crop ? Math.round(W * ref.fh / F.crop.w) : Math.round(W * ref.fh / ref.fw);
+    const SW = SRC, SH = Math.round(H * SRC / W);
+    const SHARP = !P && need > W * 1.1;                       // schermo oltre i 1920
+    const OW = P ? P.out[0] : SHARP ? SW : W, OH = P ? P.out[1] : SHARP ? SH : H;   // canvas
     const cap = Math.max(16, Math.min(N, Math.floor(BUDGET / (W * H * 1.5))));
-    const urlOf = i => F.base + SET + '/' + String(i).padStart(3, '0') + '.webp?v=' + F.v;
+    const urlOf = i => F.base + SRC + '/' + String(i).padStart(3, '0') + '.webp?v=' + F.v;
 
     const src = new Array(N).fill(null), tries = new Uint8Array(N);
     const fetching = new Set(), decoding = new Set();
@@ -551,9 +563,14 @@
                'vec2 p=vec2(gl_VertexID==1?3.:-1.,gl_VertexID==2?3.:-1.);' +
                'uv=vec2(p.x*.5+.5,.5+p.y*.5*flip);gl_Position=vec4(p,0.,1.);}';
     const HEAD = '#version 300 es\nprecision highp float;in vec2 uv;out vec4 o;';
-    const FS_Y = HEAD + 'uniform sampler2D S;void main(){o=vec4(dot(texture(S,uv).rgb,vec3(.299,.587,.114)),0.,0.,1.);}';
-    // a mezza risoluzione il campione cade fra quattro pixel: il filtro lineare ne fa la media
-    const FS_C = HEAD + 'uniform sampler2D S;void main(){vec3 c=texture(S,uv).rgb;float y=dot(c,vec3(.299,.587,.114));' +
+    /* Quattro campioni lineari attorno al centro del pixel d'arrivo: quando
+       la sorgente è più grande (2560 → 1920, e il colore a mezza
+       risoluzione) fanno da filtro di riduzione, senza scalettature; alla
+       stessa misura `d` è zero e si copia e basta. */
+    const TAP = 'uniform sampler2D S;uniform vec2 d;vec3 tap(){return(texture(S,uv-d).rgb+texture(S,uv+d).rgb+' +
+                'texture(S,uv+vec2(d.x,-d.y)).rgb+texture(S,uv+vec2(-d.x,d.y)).rgb)*.25;}';
+    const FS_Y = HEAD + TAP + 'void main(){o=vec4(dot(tap(),vec3(.299,.587,.114)),0.,0.,1.);}';
+    const FS_C = HEAD + TAP + 'void main(){vec3 c=tap();float y=dot(c,vec3(.299,.587,.114));' +
                  'o=vec4((c.b-y)/1.772+.5,(c.r-y)/1.402+.5,0.,1.);}';
     const FS_D = HEAD + 'uniform sampler2D YA,CA,YB,CB;uniform float a;' +
                  'vec3 rgb(sampler2D Y,sampler2D C){float y=texture(Y,uv).r;vec2 c=texture(C,uv).rg-.5;' +
@@ -596,7 +613,14 @@
       names.forEach((n, k) => gl.uniform1i(gl.getUniformLocation(p, n), k));
     }
     // nei passaggi verso una texture la riga 0 resta la riga 0; verso lo schermo si capovolge
-    setup(pY, 1, ['S']); setup(pC, 1, ['S']); setup(pD, -1, ['YA', 'CA', 'YB', 'CB']);
+    const W2 = W >> 1, H2 = H >> 1;
+    setup(pY, 1, ['S']);
+    // luminanza: campioni a un ottavo di pixel — misurato contro la riduzione
+    // di qualità del browser, a un quarto si perdeva nitidezza (47 dB contro 50)
+    gl.uniform2f(gl.getUniformLocation(pY, 'd'), SW === W ? 0 : .125 / W, SW === W ? 0 : .125 / H);
+    setup(pC, 1, ['S']);
+    gl.uniform2f(gl.getUniformLocation(pC, 'd'), .25 / W2, .25 / H2);
+    setup(pD, -1, ['YA', 'CA', 'YB', 'CB']);
     const uA = gl.getUniformLocation(pD, 'a');
     let uBA = null;
     if (P) {
@@ -609,7 +633,6 @@
     gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
     gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
     const fbo = gl.createFramebuffer();
-    const W2 = W >> 1, H2 = H >> 1;
 
     function tex(fmt, w, h) {
       const t = gl.createTexture();
@@ -621,7 +644,7 @@
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
       return t;
     }
-    const rgbTex = tex(gl.RGBA8, W, H);   // d'appoggio, una sola
+    const rgbTex = tex(gl.RGBA8, SW, SH); // d'appoggio, una sola, alla misura scaricata
     const mid = P ? tex(gl.RGBA8, W, H) : null;   // telefono: il fotogramma prima dell'ingrandimento
     const texture = () => spare.length ? spare.pop() : { y: tex(gl.R8, W, H), c: tex(gl.RG8, W2, H2) };
     const drop = s => { gl.deleteTexture(s.y); gl.deleteTexture(s.c); };
@@ -741,13 +764,20 @@
     }
 
     /* --- la copia sulla GPU --------------------------------------------------
-       È l'unico lavoro fatto sul thread della pagina, quindi è dosato: a ogni
-       fotogramma dello schermo se ne copia uno, il più urgente; a pagina
-       ferma, finché restano meno di 4 ms del giro. */
+       È l'unico lavoro fatto sul thread della pagina, quindi è dosato: a
+       pagina ferma uno per giro (o più, finché restano meno di 4 ms), il più
+       urgente; durante lo scroll solo se indispensabile (vedi sotto). */
     let lastMove = 0;
-    function tick() {
-      if (dead || !queue.size) return;
+    function tick(time, dt) {
+      if (dead) return;
       const t0 = performance.now(), still = t0 - lastMove > 150;
+      if (SHARP) sharpen(t0, still, dt || 16);
+      if (!queue.size) return;
+      /* Mentre si scorre non si copia nulla — una copia costa 10-15 ms, quasi
+         un intero giro — finché attorno al punto chiesto c'è già qualcosa da
+         mostrare (la riempitura a grana crescente ne mette uno ogni otto
+         quasi subito). Si copia solo se manca proprio, e uno alla volta. */
+      if (!still && ready && near(Math.floor(want), -1) >= 0 && near(Math.ceil(want), 1) >= 0) return;
       do {
         const i = bestQueued();
         const bm = queue.get(i);
@@ -852,8 +882,73 @@
       }
       gl.useProgram(pD);
       gl.uniform1f(uA, a);
-      gl.viewport(0, 0, W, H);
+      gl.viewport(0, 0, OW, OH);
       gl.drawArrays(gl.TRIANGLES, 0, 3);
+      // da fermi, sopra: lo stesso punto del filmato a piena risoluzione
+      if (SHARP && restAlpha > 0 && restKey === k) {
+        gl.useProgram(pR);
+        gl.uniform1f(uRa, a);
+        gl.uniform1f(uRal, restAlpha);
+        gl.bindTexture(gl.TEXTURE_2D, restA);
+        gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, a ? restB : restA);
+        gl.activeTexture(gl.TEXTURE0);
+        gl.enable(gl.BLEND);
+        gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+        gl.drawArrays(gl.TRIANGLES, 0, 3);
+        gl.disable(gl.BLEND);
+      }
+    }
+
+    /* --- il livello nitido ----------------------------------------------------
+       Solo dove lo schermo ha più pixel di quanti ne stiano in memoria
+       (retina, 1440p, 4K). In movimento si vede la serie in memoria — è lì
+       che serve la fluidità, e il movimento nasconde la differenza. Appena
+       lo scroll si ferma, i due fotogrammi a schermo si decodificano a
+       piena risoluzione (2560) nei thread di sfondo, si copiano sulla GPU
+       uno per giro — a pagina ferma, quindi senza toccare la fluidità — e
+       compaiono con una dissolvenza di un quarto di secondo. Al primo
+       movimento spariscono all'istante. */
+    let restKey = '', restAlpha = 0, restJob = null;
+    const restA = SHARP ? tex(gl.RGBA8, SW, SH) : null, restB = SHARP ? tex(gl.RGBA8, SW, SH) : null;
+    const pR = SHARP ? program(HEAD + 'uniform sampler2D RA,RB;uniform float a,al;void main(){' +
+                               'vec3 c=texture(RA,uv).rgb;if(a>0.)c=mix(c,texture(RB,uv).rgb,a);o=vec4(c,al);}') : null;
+    let uRa = null, uRal = null;
+    if (SHARP) {
+      if (!pR) return fail(true);
+      setup(pR, -1, ['RA', 'RB']);
+      uRa = gl.getUniformLocation(pR, 'a'); uRal = gl.getUniformLocation(pR, 'al');
+    }
+    function sharpen(now, still, dt) {
+      if (!ready) return;
+      if (restJob) {
+        // la copia: un fotogramma per giro, e solo se nel frattempo non ci si è mossi
+        if (restJob.key !== lastDrawn || !still) {
+          if (restJob.bms) restJob.bms.forEach(b => b && b.close());
+          restJob = null;
+          return;
+        }
+        if (!restJob.bms) return;                     // ancora in decodifica
+        const k = restJob.done++, b = restJob.bms[k];
+        if (b) {
+          gl.activeTexture(gl.TEXTURE0);
+          gl.bindTexture(gl.TEXTURE_2D, k ? restB : restA);
+          gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, gl.RGBA, gl.UNSIGNED_BYTE, b);
+          b.close(); restJob.bms[k] = null;
+        }
+        if (restJob.done >= restJob.bms.length) { restKey = restJob.key; restAlpha = 0; restJob = null; }
+        return;
+      }
+      if (!still) return;
+      if (restKey === lastDrawn) {
+        if (restAlpha < 1) { restAlpha = Math.min(1, restAlpha + dt / 250); draw(true); }
+        return;
+      }
+      const p = lastDrawn.split('|'), ia = +p[0], ib = p.length === 3 ? +p[1] : -1;
+      if (!src[ia] || (ib >= 0 && !src[ib])) return;
+      const job = restJob = { key: lastDrawn, bms: null, done: 0 };
+      Promise.all([createImageBitmap(src[ia]), ib >= 0 ? createImageBitmap(src[ib]) : null]).then(bms => {
+        if (restJob === job) job.bms = bms; else bms.forEach(b => b && b.close());
+      }, () => { if (restJob === job) restJob = null; });
     }
 
     if (hasGSAP) gsap.ticker.add(tick);
@@ -870,7 +965,10 @@
       } else if (dw) turn = 0;
       if (dw) lastMove = performance.now();
       want = w;
-      draw();
+      // al primo movimento il livello nitido sparisce all'istante
+      const off = dw && restAlpha > 0;
+      if (off) restAlpha = 0;
+      draw(off);
       pump();
     };
     /* A intro finita le texture si liberano, tranne gli ultimi fotogrammi:
@@ -884,10 +982,12 @@
       }
       spare.forEach(drop); spare.length = 0;
     };
-    S.debug = () => ({ want, dir, cap, set: SET, keys: [...cache.keys()].sort((a, b) => a - b),
-                       window: windowOf(), queue: [...queue.keys()], decoding: [...decoding], decoded, stored, uploadMs });
+    S.debug = () => ({ want, dir, cap, src: SRC, out: OW, keys: [...cache.keys()].sort((a, b) => a - b),
+                       window: windowOf(), queue: [...queue.keys()], decoding: [...decoding], decoded, stored, uploadMs,
+                       restKey, restAlpha });
     S.stats = () =>
-      cache.size + '/' + cap + ' @' + W + ' gpu · scaricati ' + nSrc + '/' + N +
+      cache.size + '/' + cap + ' @' + W + (SRC !== W ? '←' + SRC : '') + (SHARP ? ' nitido ' + OW : '') +
+      ' gpu · scaricati ' + nSrc + '/' + N +
       ' · ' + (lastDrawn || '-') + ' · trattenuti ' + held + ' su ' + draws +
       ' · copiati ' + stored + ' (' + (stored ? (uploadMs / stored).toFixed(1) : '-') + ' ms)';
     return S;
